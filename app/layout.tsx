@@ -11,7 +11,7 @@ const orbitron = Orbitron({
 })
 
 export const metadata: Metadata = {
-  title: 'Amphion — Paint music into a synthwave sky',
+  title: 'Amphion - Paint music into a synthwave sky',
   description:
     'A blank canvas where every sound you place paints a reactive synthwave scene. Build a beat and watch the night come alive.',
 }

@@ -128,3 +128,21 @@
     box-shadow: 0 0 10px color-mix(in oklch, var(--primary) 80%, transparent);
   }
 }
+
+/* CRT-style scanline sweep used by the home screen's monitor overlay */
+@keyframes crt-scan {
+  0% {
+    top: -4%;
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.9;
+  }
+  92% {
+    opacity: 0.9;
+  }
+  100% {
+    top: 104%;
+    opacity: 0;
+  }
+}

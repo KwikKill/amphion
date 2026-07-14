@@ -21,7 +21,7 @@ interface VisualEvent {
 export interface EngineCallbacks {
   onStep?: (step: number) => void
   onTrigger?: (type: TrackType, velocity: number, step: number) => void
-  // Fired once step 0 of a loop has just been triggered — the clean point
+  // Fired once step 0 of a loop has just been triggered - the clean point
   // to start a recording so it doesn't begin mid-bar.
   onLoopStart?: () => void
   // Fired once the last step of the current 16-step loop has been triggered,

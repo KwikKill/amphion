@@ -1,4 +1,4 @@
-// Fully-synthesized voices — no sample files anywhere. Each function
+// Fully-synthesized voices - no sample files anywhere. Each function
 // schedules a self-contained little synth patch at an exact AudioContext time.
 
 import {

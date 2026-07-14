@@ -1,4 +1,4 @@
-// Visual theme presets. Each is just a base hue fed into SceneEngine — every
+// Visual theme presets. Each is just a base hue fed into SceneEngine - every
 // color in the scene is derived from it with fixed offsets, so rotating the
 // hue re-themes the whole synthwave palette while keeping its structure.
 
@@ -21,6 +21,10 @@ export const DEFAULT_THEME: ThemeId = "blue"
 
 export function themeHue(id: ThemeId): number {
   return THEMES.find((t) => t.id === id)?.hue ?? THEMES[0].hue
+}
+
+export function themeSwatch(id: ThemeId): string {
+  return THEMES.find((t) => t.id === id)?.swatch ?? THEMES[0].swatch
 }
 
 // TRACK_CATALOG's per-instrument hues were all picked in the blue theme's

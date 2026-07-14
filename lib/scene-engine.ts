@@ -1,4 +1,4 @@
-// The generative synthwave scene. Pure Canvas 2D — no WebGL, no images.
+// The generative synthwave scene. Pure Canvas 2D - no WebGL, no images.
 // Each sound family owns a persistent layer whose "presence" eases in when
 // the track is active and whose "energy" spikes on every trigger and decays.
 

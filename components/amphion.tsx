@@ -13,6 +13,7 @@ import {
   Video,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { CrtOverlay } from "@/components/crt-overlay"
 import { SoundLibrary } from "@/components/sound-library"
 import { ThemePicker } from "@/components/theme-picker"
 import { TrackRack } from "@/components/track-rack"
@@ -35,7 +36,7 @@ import {
   startRecording,
   type ActiveRecording,
 } from "@/lib/recorder"
-import { DEFAULT_THEME, themeHue, type ThemeId } from "@/lib/theme"
+import { DEFAULT_THEME, themeHue, themeSwatch, type ThemeId } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 
 export function Amphion() {
@@ -275,7 +276,7 @@ export function Amphion() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      /* clipboard blocked — URL is still in the address bar */
+      /* clipboard blocked - URL is still in the address bar */
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
@@ -301,7 +302,7 @@ export function Amphion() {
   const toggleRecord = useCallback(
     async (kind: "video" | "audio") => {
       // A start is queued for the next loop boundary but hasn't happened
-      // yet — toggling again cancels it (start + stop inside the same
+      // yet - toggling again cancels it (start + stop inside the same
       // segment, before the segment even began recording).
       if (pendingStartActionRef.current && !recordingRef.current) {
         pendingStartActionRef.current = null
@@ -387,7 +388,7 @@ export function Amphion() {
         className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-background/70 to-transparent"
       />
 
-      {!started && <StartOverlay onBegin={begin} />}
+      {!started && <StartOverlay onBegin={begin} themeId={themeId} />}
 
       {started && !watchMode && (
         <>
@@ -540,26 +541,72 @@ function realIndex(pattern: Pattern, sortedIndex: number): number {
   return pattern.tracks.findIndex((t) => t.type === type)
 }
 
-function StartOverlay({ onBegin }: { onBegin: () => void }) {
+const START_FEATURES = [
+  { icon: Music4, label: "8-layer sequencer" },
+  { icon: Eye, label: "Reactive visuals" },
+  { icon: Video, label: "Record & share" },
+]
+
+function StartOverlay({ onBegin, themeId }: { onBegin: () => void; themeId: ThemeId }) {
+  const swatch = themeSwatch(themeId)
   return (
     <button
       type="button"
       onClick={onBegin}
-      className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 bg-background/40 backdrop-blur-[2px] transition-colors"
+      className="group absolute inset-0 z-30 flex flex-col items-center justify-center gap-8 px-6 text-center backdrop-blur-[1px]"
     >
-      <div className="flex flex-col items-center gap-3 text-center">
-        <span className="font-display text-5xl font-black tracking-[0.28em] text-foreground drop-shadow-[0_0_25px_hsl(210_90%_60%/0.6)] sm:text-7xl">
-          AMPHION
+      {/* dedicated scrim behind the copy so it stays legible over a busy scene */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-background/25 via-background/60 to-background/85"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[64vh] w-[94vw] max-w-3xl -translate-x-1/2 -translate-y-1/2 rounded-[3rem] bg-background/55 blur-3xl"
+      />
+
+      <div className="relative flex animate-in flex-col items-center gap-5 fade-in zoom-in-95 duration-700">
+        <span
+          className="font-display text-[0.65rem] font-bold uppercase tracking-[0.55em] sm:text-xs"
+          style={{ color: swatch }}
+        >
+          Synthwave Sequencer
         </span>
-        <p className="max-w-md text-balance px-6 text-sm leading-relaxed text-muted-foreground sm:text-base">
+
+        <h1
+          className="font-display text-6xl font-black tracking-[0.14em] text-foreground sm:text-8xl"
+          style={{ textShadow: `0 0 30px ${swatch}, 0 0 90px ${swatch}` }}
+        >
+          AMPHION
+        </h1>
+
+        <p className="max-w-lg text-balance px-4 text-base leading-relaxed text-foreground/90 sm:text-lg">
           A blank horizon waiting for sound. Place a beat and watch a synthwave
           world assemble itself, layer by layer.
         </p>
+
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {START_FEATURES.map(({ icon: Icon, label }) => (
+            <span
+              key={label}
+              className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur-md"
+            >
+              <Icon className="size-3.5" style={{ color: swatch }} />
+              {label}
+            </span>
+          ))}
+        </div>
+
+        <span
+          className="mt-2 flex items-center gap-2 rounded-full px-6 py-3 font-display text-sm font-bold tracking-widest text-background transition-transform duration-300 group-hover:scale-105 group-active:scale-95"
+          style={{ backgroundColor: swatch, boxShadow: `0 0 45px ${swatch}` }}
+        >
+          <span className="size-2 animate-pulse rounded-full bg-background/70" />
+          CLICK TO BEGIN
+        </span>
       </div>
-      <span className="flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-5 py-2.5 font-display text-sm font-bold tracking-widest text-primary shadow-[0_0_30px_hsl(210_90%_60%/0.35)]">
-        <span className="size-2 animate-pulse rounded-full bg-primary" />
-        CLICK TO BEGIN
-      </span>
+
+      <CrtOverlay color={swatch} />
     </button>
   )
 }

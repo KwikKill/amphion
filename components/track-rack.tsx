@@ -30,7 +30,7 @@ export function TrackRack({
   if (tracks.length === 0) {
     return (
       <div className="flex h-24 items-center justify-center rounded-xl border border-dashed border-border/60 text-sm text-muted-foreground">
-        No layers yet — add a sound to start painting the sky.
+        No layers yet - add a sound to start painting the sky.
       </div>
     )
   }
