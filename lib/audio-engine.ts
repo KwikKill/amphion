@@ -21,6 +21,13 @@ interface VisualEvent {
 export interface EngineCallbacks {
   onStep?: (step: number) => void
   onTrigger?: (type: TrackType, velocity: number, step: number) => void
+  // Fired once step 0 of a loop has just been triggered — the clean point
+  // to start a recording so it doesn't begin mid-bar.
+  onLoopStart?: () => void
+  // Fired once the last step of the current 16-step loop has been triggered,
+  // so callers (e.g. the recorder) can wait for a clean loop boundary
+  // instead of cutting off mid-bar.
+  onLoopEnd?: () => void
 }
 
 export class AudioEngine {
@@ -145,7 +152,10 @@ export class AudioEngine {
     let j = 0
     while (j < this.stepQueue.length) {
       if (this.stepQueue[j].time <= now) {
-        this.callbacks.onStep?.(this.stepQueue[j].step)
+        const step = this.stepQueue[j].step
+        this.callbacks.onStep?.(step)
+        if (step === 0) this.callbacks.onLoopStart?.()
+        if (step === STEP_COUNT - 1) this.callbacks.onLoopEnd?.()
         this.stepQueue.splice(j, 1)
       } else {
         j++

@@ -48,10 +48,14 @@ export function Amphion() {
   const [watchMode, setWatchMode] = useState(false)
   const [copied, setCopied] = useState(false)
   const [recordingKind, setRecordingKind] = useState<"video" | "audio" | null>(null)
+  const [startingRecording, setStartingRecording] = useState(false)
+  const [finishingRecording, setFinishingRecording] = useState(false)
 
   const engineRef = useRef<AudioEngine | null>(null)
   const sceneRef = useRef<SceneHandle>(null)
   const recordingRef = useRef<ActiveRecording | null>(null)
+  const stopRecordingPendingRef = useRef(false)
+  const pendingStartActionRef = useRef<(() => void | Promise<void>) | null>(null)
   const patternRef = useRef(pattern)
   patternRef.current = pattern
 
@@ -67,6 +71,17 @@ export function Amphion() {
     engine.setCallbacks({
       onStep: (step) => setCurrentStep(step),
       onTrigger: (type, velocity, step) => sceneRef.current?.trigger(type, velocity, step),
+      onLoopStart: () => {
+        const action = pendingStartActionRef.current
+        if (!action) return
+        pendingStartActionRef.current = null
+        action()
+      },
+      onLoopEnd: () => {
+        if (!stopRecordingPendingRef.current) return
+        stopRecordingPendingRef.current = false
+        recordingRef.current?.stop()
+      },
     })
   }, [])
 
@@ -131,23 +146,38 @@ export function Amphion() {
     }
   }, [])
 
+  // Pausing/stopping the transport means no segment is playing to wait for
+  // anymore, so any queued recording start/stop can't resolve on its own.
+  const abortPendingRecording = useCallback(() => {
+    if (pendingStartActionRef.current) {
+      pendingStartActionRef.current = null
+      setStartingRecording(false)
+      setRecordingKind(null)
+    } else if (recordingRef.current) {
+      stopRecordingPendingRef.current = false
+      recordingRef.current.stop()
+    }
+  }, [])
+
   const togglePlay = useCallback(async () => {
     const engine = engineRef.current
     if (!engine) return
     if (engine.playing) {
       engine.stop()
       setPlaying(false)
+      abortPendingRecording()
     } else {
       await engine.start()
       setPlaying(true)
     }
-  }, [])
+  }, [abortPendingRecording])
 
   const stop = useCallback(() => {
     engineRef.current?.stop()
     setPlaying(false)
     setCurrentStep(-1)
-  }, [])
+    abortPendingRecording()
+  }, [abortPendingRecording])
 
   /* --------------------------- editing --------------------------- */
   const updateTrack = useCallback(
@@ -269,33 +299,72 @@ export function Amphion() {
   /* --------------------------- recording --------------------------- */
   const toggleRecord = useCallback(
     async (kind: "video" | "audio") => {
-      if (recordingRef.current) {
-        recordingRef.current.stop()
+      // A start is queued for the next loop boundary but hasn't happened
+      // yet — toggling again cancels it (start + stop inside the same
+      // segment, before the segment even began recording).
+      if (pendingStartActionRef.current && !recordingRef.current) {
+        pendingStartActionRef.current = null
+        setStartingRecording(false)
+        setRecordingKind(null)
         return
       }
+
+      // Already recording: let the loop finish so it doesn't cut off mid-bar.
+      if (recordingRef.current) {
+        if (engineRef.current?.playing) {
+          stopRecordingPendingRef.current = true
+          setFinishingRecording(true)
+        } else {
+          recordingRef.current.stop()
+        }
+        return
+      }
+
       const engine = engineRef.current
       if (!engine) return
+
+      const beginCapture = () => {
+        setStartingRecording(false)
+        const audioStream = engine.getStream()
+        if (!audioStream) {
+          setRecordingKind(null)
+          return
+        }
+        const rec = startRecording({
+          kind,
+          audioStream,
+          canvas: sceneRef.current?.getCanvas(),
+          onComplete: (blob) => {
+            downloadBlob(blob, `amphion-${Date.now()}.webm`)
+            recordingRef.current = null
+            stopRecordingPendingRef.current = false
+            setRecordingKind(null)
+            setFinishingRecording(false)
+            setStartingRecording(false)
+          },
+        })
+        if (rec) {
+          recordingRef.current = rec
+        } else {
+          setRecordingKind(null)
+        }
+      }
+
+      setRecordingKind(kind)
+
       if (!engine.playing) {
+        // Starting from a stopped/paused transport already begins right on
+        // step 0, so there's no segment to wait for.
         await engine.start()
         setPlaying(true)
+        beginCapture()
+        return
       }
-      const audioStream = engine.getStream()
-      if (!audioStream) return
-      const rec = startRecording({
-        kind,
-        audioStream,
-        canvas: sceneRef.current?.getCanvas(),
-        onComplete: (blob) => {
-          const ext = kind === "video" ? "webm" : "webm"
-          downloadBlob(blob, `amphion-${Date.now()}.${ext}`)
-          recordingRef.current = null
-          setRecordingKind(null)
-        },
-      })
-      if (rec) {
-        recordingRef.current = rec
-        setRecordingKind(kind)
-      }
+
+      // Playback is already mid-pattern: queue the capture for the next
+      // loop boundary instead of starting mid-segment.
+      setStartingRecording(true)
+      pendingStartActionRef.current = beginCapture
     },
     [],
   )
@@ -341,7 +410,7 @@ export function Amphion() {
               {recordingKind && (
                 <span className="mr-1 flex items-center gap-1.5 rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
                   <span className="size-2 animate-pulse rounded-full bg-destructive" />
-                  REC
+                  {startingRecording ? "Starting…" : finishingRecording ? "Finishing…" : "REC"}
                 </span>
               )}
               <Button variant="ghost" size="sm" onClick={loadDemo}>
@@ -357,16 +426,32 @@ export function Amphion() {
               <Button
                 variant={recordingKind === "audio" ? "default" : "secondary"}
                 size="sm"
+                disabled={recordingKind !== null && recordingKind !== "audio"}
                 onClick={() => toggleRecord("audio")}
               >
-                <Radio /> {recordingKind === "audio" ? "Stop" : "Audio"}
+                <Radio />{" "}
+                {recordingKind === "audio"
+                  ? startingRecording
+                    ? "Starting…"
+                    : finishingRecording
+                      ? "Finishing…"
+                      : "Stop"
+                  : "Audio"}
               </Button>
               <Button
                 variant={recordingKind === "video" ? "default" : "secondary"}
                 size="sm"
+                disabled={recordingKind !== null && recordingKind !== "video"}
                 onClick={() => toggleRecord("video")}
               >
-                <Video /> {recordingKind === "video" ? "Stop" : "Record"}
+                <Video />{" "}
+                {recordingKind === "video"
+                  ? startingRecording
+                    ? "Starting…"
+                    : finishingRecording
+                      ? "Finishing…"
+                      : "Stop"
+                  : "Record"}
               </Button>
               <Button variant="outline" size="sm" onClick={enterWatch}>
                 <Eye /> Watch
