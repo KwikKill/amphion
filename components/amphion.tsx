@@ -395,8 +395,22 @@ export function Amphion() {
           {/* header */}
           <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
             <div className="flex items-center gap-2">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-primary/15 text-primary ring-1 ring-primary/30">
-                <Music4 className="size-4" />
+              <span className="flex size-8 items-center justify-center rounded-lg bg-primary/15 ring-1 ring-primary/30">
+                <span
+                  aria-hidden="true"
+                  className="size-8"
+                  style={{
+                    backgroundColor: themeSwatch(themeId),
+                    maskImage: "url(/kwikkill.png)",
+                    maskSize: "contain",
+                    maskRepeat: "no-repeat",
+                    maskPosition: "center",
+                    WebkitMaskImage: "url(/kwikkill.png)",
+                    WebkitMaskSize: "contain",
+                    WebkitMaskRepeat: "no-repeat",
+                    WebkitMaskPosition: "center",
+                  }}
+                />
               </span>
               <div className="leading-none">
                 <h1 className="font-display text-lg font-black tracking-[0.2em] text-foreground">
