@@ -374,7 +374,8 @@ export function Amphion() {
   const usedTypes = pattern.tracks.map((t) => t.type)
 
   return (
-    <main className="relative h-dvh w-full overflow-hidden bg-background">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-background">
+    <main className="relative flex-1 overflow-hidden">
       <VisualScene
         ref={sceneRef}
         activeTracks={activeTracks}
@@ -542,6 +543,8 @@ export function Amphion() {
         </button>
       )}
     </main>
+    <Footer hidden={watchMode} />
+    </div>
   )
 }
 
@@ -553,6 +556,28 @@ function realIndex(pattern: Pattern, sortedIndex: number): number {
   )
   const type = sorted[sortedIndex]?.type
   return pattern.tracks.findIndex((t) => t.type === type)
+}
+
+function Footer({ hidden }: { hidden?: boolean }) {
+  const year = new Date().getFullYear()
+  return (
+    <footer
+      className={cn(
+        "relative z-20 flex shrink-0 items-center justify-center gap-1 px-4 py-1.5 text-center text-[0.7rem] text-muted-foreground transition-opacity duration-300",
+        hidden && "pointer-events-none opacity-0",
+      )}
+    >
+      © {year} Amphion. All rights reserved. Made by{" "}
+      <a
+        href="https://gabriel.blaisot.org/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-medium text-foreground/80 underline-offset-2 hover:text-accent hover:underline"
+      >
+        KwikKill
+      </a>
+    </footer>
+  )
 }
 
 const START_FEATURES = [
