@@ -4,10 +4,12 @@ import { Trash2, Volume2, VolumeX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { STEP_COUNT, TRACK_CATALOG, type Track } from "@/lib/pattern"
+import { trackHue, type ThemeId } from "@/lib/theme"
 
 interface TrackRackProps {
   tracks: Track[]
   currentStep: number
+  themeId: ThemeId
   onToggleStep: (index: number, step: number) => void
   onCycleVariant: (index: number) => void
   onToggleMute: (index: number) => void
@@ -18,6 +20,7 @@ interface TrackRackProps {
 export function TrackRack({
   tracks,
   currentStep,
+  themeId,
   onToggleStep,
   onCycleVariant,
   onToggleMute,
@@ -36,7 +39,7 @@ export function TrackRack({
     <div className="flex flex-col gap-1.5">
       {tracks.map((track, i) => {
         const meta = TRACK_CATALOG[track.type]
-        const hue = meta.hue
+        const hue = trackHue(meta.hue, themeId)
         return (
           <div
             key={track.type}

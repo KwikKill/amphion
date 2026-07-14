@@ -3,14 +3,16 @@
 import { Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { TRACK_CATALOG, TRACK_ORDER, type TrackType } from "@/lib/pattern"
+import { trackHue, type ThemeId } from "@/lib/theme"
 
 interface SoundLibraryProps {
   usedTypes: TrackType[]
+  themeId: ThemeId
   onAdd: (type: TrackType) => void
   onClose: () => void
 }
 
-export function SoundLibrary({ usedTypes, onAdd, onClose }: SoundLibraryProps) {
+export function SoundLibrary({ usedTypes, themeId, onAdd, onClose }: SoundLibraryProps) {
   const used = new Set(usedTypes)
 
   return (
@@ -29,6 +31,7 @@ export function SoundLibrary({ usedTypes, onAdd, onClose }: SoundLibraryProps) {
       <div className="flex flex-col gap-1.5">
         {TRACK_ORDER.map((type) => {
           const meta = TRACK_CATALOG[type]
+          const hue = trackHue(meta.hue, themeId)
           const isUsed = used.has(type)
           return (
             <button
@@ -41,8 +44,8 @@ export function SoundLibrary({ usedTypes, onAdd, onClose }: SoundLibraryProps) {
               <span
                 className="size-2.5 shrink-0 rounded-full"
                 style={{
-                  backgroundColor: `hsl(${meta.hue} 90% 62%)`,
-                  boxShadow: `0 0 10px hsl(${meta.hue} 90% 60% / 0.8)`,
+                  backgroundColor: `hsl(${hue} 90% 62%)`,
+                  boxShadow: `0 0 10px hsl(${hue} 90% 60% / 0.8)`,
                 }}
                 aria-hidden="true"
               />

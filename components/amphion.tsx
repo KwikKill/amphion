@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SoundLibrary } from "@/components/sound-library"
+import { ThemePicker } from "@/components/theme-picker"
 import { TrackRack } from "@/components/track-rack"
 import { TransportBar } from "@/components/transport-bar"
 import { VisualScene, type SceneHandle } from "@/components/visual-scene"
@@ -34,9 +35,8 @@ import {
   startRecording,
   type ActiveRecording,
 } from "@/lib/recorder"
+import { DEFAULT_THEME, themeHue, type ThemeId } from "@/lib/theme"
 import { cn } from "@/lib/utils"
-
-const THEME_HUE = 210
 
 export function Amphion() {
   const [pattern, setPattern] = useState<Pattern>(() => demoPattern())
@@ -47,6 +47,7 @@ export function Amphion() {
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [watchMode, setWatchMode] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [themeId, setThemeId] = useState<ThemeId>(DEFAULT_THEME)
   const [recordingKind, setRecordingKind] = useState<"video" | "audio" | null>(null)
   const [startingRecording, setStartingRecording] = useState(false)
   const [finishingRecording, setFinishingRecording] = useState(false)
@@ -377,7 +378,7 @@ export function Amphion() {
         ref={sceneRef}
         activeTracks={activeTracks}
         playing={playing}
-        themeHue={THEME_HUE}
+        themeHue={themeHue(themeId)}
       />
 
       {/* subtle top glow so chrome reads over the scene */}
@@ -407,6 +408,7 @@ export function Amphion() {
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <ThemePicker value={themeId} onChange={setThemeId} />
               {recordingKind && (
                 <span className="mr-1 flex items-center gap-1.5 rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
                   <span className="size-2 animate-pulse rounded-full bg-destructive" />
@@ -488,6 +490,7 @@ export function Amphion() {
                 <TrackRack
                   tracks={orderedTracks}
                   currentStep={currentStep}
+                  themeId={themeId}
                   onToggleStep={handleToggleStep}
                   onCycleVariant={handleCycleVariant}
                   onToggleMute={handleToggleMute}
@@ -503,6 +506,7 @@ export function Amphion() {
             <div className="absolute bottom-28 left-1/2 z-30 -translate-x-1/2 sm:bottom-32">
               <SoundLibrary
                 usedTypes={usedTypes}
+                themeId={themeId}
                 onAdd={handleAdd}
                 onClose={() => setLibraryOpen(false)}
               />
