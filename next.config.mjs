@@ -6,6 +6,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  allowedDevOrigins: ["amphion.somi.localhost"],
 }
 
 export default nextConfig
