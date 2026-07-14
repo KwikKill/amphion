@@ -382,10 +382,33 @@ export class SceneEngine {
     if (this.snareFlash > 0.01) {
       ctx.fillStyle = this.hsl(hue - 15, 100, 95, this.snareFlash * 0.5)
       ctx.fillRect(0, 0, w, h)
-      // bright scanline sweep
+      // bright scanline sweep, drawn as a waveform with a few stacked
+      // harmonics so it reads like an audio signal, not a single arc
       const sweepY = (1 - this.snareFlash) * h
-      ctx.fillStyle = this.hsl(hue - 20, 100, 90, this.snareFlash)
-      ctx.fillRect(0, sweepY - 2, w, 4)
+      const amp = Math.min(w, h) * 0.11 * this.snareFlash
+      const baseFreq = 6
+      ctx.save()
+      ctx.strokeStyle = this.hsl(hue - 20, 100, 90, this.snareFlash)
+      ctx.lineWidth = 2.5
+      ctx.lineCap = "round"
+      ctx.lineJoin = "round"
+      ctx.shadowBlur = 18
+      ctx.shadowColor = this.hsl(hue - 20, 100, 80, this.snareFlash)
+      ctx.beginPath()
+      const segments = 160
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments
+        const x = t * w
+        const wave =
+          Math.sin(t * Math.PI * 2 * baseFreq) * 0.5 +
+          Math.sin(t * Math.PI * 2 * baseFreq * 2 + 1.3) * 0.3 +
+          Math.sin(t * Math.PI * 2 * baseFreq * 3 + 2.1) * 0.2
+        const y = sweepY + wave * amp
+        if (i === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      }
+      ctx.stroke()
+      ctx.restore()
     }
 
     // ---- vignette for depth ----

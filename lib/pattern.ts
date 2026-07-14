@@ -138,6 +138,7 @@ export function demoPattern(): Pattern {
       { type: "snare", variant: 1, steps: s([4, 12]), volume: 0.75, muted: false },
       { type: "hihat", variant: 0, steps: s([2, 6, 10, 14]), volume: 0.5, muted: false },
       { type: "lead", variant: 1, steps: s([0, 2, 3, 7, 8, 10, 14]), volume: 0.55, muted: false },
+      { type: "vocal", variant: 0, steps: s([3, 4, 5, 6, 11, 12, 13]), volume: 0.55, muted: false },
       { type: "pad", variant: 0, steps: s([0, 8]), volume: 0.6, muted: false },
     ],
   }
