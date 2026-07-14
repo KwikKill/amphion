@@ -27,6 +27,11 @@ interface Ripple {
   t: number
 }
 
+interface SnarePulse {
+  t: number // age in seconds since the hit
+  velocity: number
+}
+
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t
 }
@@ -54,7 +59,7 @@ export class SceneEngine {
   private comets: Comet[] = []
   private ripples: Ripple[] = []
   private mountains: number[] = []
-  private snareFlash = 0
+  private snarePulses: SnarePulse[] = []
   private padHueDrift = 0
   private gridScroll = 0
   private palmSway = 0
@@ -115,7 +120,7 @@ export class SceneEngine {
 
   trigger(type: TrackType, velocity: number, step: number) {
     this.energy[type] = Math.min(1.4, (this.energy[type] || 0) + velocity)
-    if (type === "snare") this.snareFlash = Math.min(1, this.snareFlash + velocity)
+    if (type === "snare") this.snarePulses.push({ t: 0, velocity: Math.min(1, velocity) })
     if (type === "bass") this.ripples.push({ t: 0 })
     if (type === "pad") this.padHueDrift += 18 * velocity
     if (type === "vocal") this.palmSway = Math.min(1, this.palmSway + velocity)
@@ -173,13 +178,15 @@ export class SceneEngine {
       this.presence[t] = lerp(this.presence[t] || 0, target, 1 - Math.pow(0.001, dt))
       this.energy[t] = (this.energy[t] || 0) * Math.pow(0.02, dt)
     }
-    this.snareFlash *= Math.pow(0.0008, dt)
     this.palmSway *= Math.pow(0.15, dt)
     this.gridScroll += dt * (0.25 + (this.energy.bass || 0) * 0.4)
     this.padHueDrift *= Math.pow(0.6, dt)
     // ripples
     this.ripples.forEach((r) => (r.t += dt))
     this.ripples = this.ripples.filter((r) => r.t < 1.4)
+    // snare pulses
+    this.snarePulses.forEach((p) => (p.t += dt))
+    this.snarePulses = this.snarePulses.filter((p) => p.t < 1.1)
     // comets
     this.comets.forEach((c) => {
       c.x += c.vx
@@ -378,36 +385,46 @@ export class SceneEngine {
       }
     }
 
-    // ---- snare flash overlay ----
-    if (this.snareFlash > 0.01) {
-      ctx.fillStyle = this.hsl(hue - 15, 100, 95, this.snareFlash * 0.5)
+    // ---- snare heartbeat pulse: bars that grow outward from the center,
+    // like the spike of an ECG/heart-rate monitor ----
+    if (this.snarePulses.length > 0) {
+      const attack = 0.05 // seconds to grow to full height
+      const decay = 3.2 // exponential falloff after the peak
+      const spread = 0.16 // seconds for the pulse to reach the edges from the center
+      const envelopeAt = (age: number) =>
+        age < 0 ? 0 : age < attack ? age / attack : Math.exp(-(age - attack) * decay)
+
+      // soft full-screen flash timed to the center of the pulse
+      const centerEnv = this.snarePulses.reduce((max, p) => Math.max(max, envelopeAt(p.t) * p.velocity), 0)
+      ctx.fillStyle = this.hsl(hue - 15, 100, 95, centerEnv * 0.35)
       ctx.fillRect(0, 0, w, h)
-      // bright scanline sweep, drawn as a waveform with a few stacked
-      // harmonics so it reads like an audio signal, not a single arc
-      const sweepY = (1 - this.snareFlash) * h
-      const amp = Math.min(w, h) * 0.11 * this.snareFlash
-      const baseFreq = 6
+
+      const baseline = h * 0.42
+      const barCount = 20
       ctx.save()
-      ctx.strokeStyle = this.hsl(hue - 20, 100, 90, this.snareFlash)
-      ctx.lineWidth = 2.5
       ctx.lineCap = "round"
-      ctx.lineJoin = "round"
-      ctx.shadowBlur = 18
-      ctx.shadowColor = this.hsl(hue - 20, 100, 80, this.snareFlash)
-      ctx.beginPath()
-      const segments = 160
-      for (let i = 0; i <= segments; i++) {
-        const t = i / segments
+      ctx.lineWidth = 3
+      for (let i = 0; i < barCount; i++) {
+        const t = i / (barCount - 1)
         const x = t * w
-        const wave =
-          Math.sin(t * Math.PI * 2 * baseFreq) * 0.5 +
-          Math.sin(t * Math.PI * 2 * baseFreq * 2 + 1.3) * 0.3 +
-          Math.sin(t * Math.PI * 2 * baseFreq * 3 + 2.1) * 0.2
-        const y = sweepY + wave * amp
-        if (i === 0) ctx.moveTo(x, y)
-        else ctx.lineTo(x, y)
+        const dist = Math.abs(t - 0.5) * 2 // 0 at the center, 1 at the edges
+        const shape = Math.exp(-Math.pow(dist * 2.4, 2)) // taller near the center, like a QRS spike
+
+        let amp = 0
+        for (const p of this.snarePulses) {
+          amp = Math.max(amp, envelopeAt(p.t - dist * spread) * p.velocity)
+        }
+        if (amp < 0.02) continue
+
+        const barH = amp * shape * h * 0.34
+        ctx.strokeStyle = this.hsl(hue - 20, 100, 90, Math.min(1, amp))
+        ctx.shadowBlur = 14
+        ctx.shadowColor = this.hsl(hue - 20, 100, 80, Math.min(1, amp))
+        ctx.beginPath()
+        ctx.moveTo(x, baseline - barH * 0.5)
+        ctx.lineTo(x, baseline + barH * 0.5)
+        ctx.stroke()
       }
-      ctx.stroke()
       ctx.restore()
     }
 
