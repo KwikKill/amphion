@@ -162,10 +162,11 @@ export function Amphion() {
 
   const handleToggleStep = useCallback(
     (index: number, step: number) => {
+      const realIdx = realIndex(pattern, index)
       let turnedOn = false
       setPattern((prev) => {
         const tracks = prev.tracks.map((t, i) => {
-          if (i !== index) return t
+          if (i !== realIdx) return t
           const steps = [...t.steps]
           steps[step] = steps[step] ? 0 : 1
           turnedOn = steps[step] === 1
@@ -179,7 +180,7 @@ export function Amphion() {
         engine?.audition(track.type, track.variant, track.volume, step)
       }
     },
-    [orderedTracks],
+    [orderedTracks, pattern],
   )
 
   const handleCycleVariant = useCallback(
