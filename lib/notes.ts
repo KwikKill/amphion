@@ -4,6 +4,11 @@ export function midiToFreq(midi: number): number {
   return 440 * Math.pow(2, (midi - 69) / 12)
 }
 
+// Frequency multiplier for a per-track transpose, in semitones.
+export function transposeRatio(semitones: number): number {
+  return Math.pow(2, semitones / 12)
+}
+
 // A minor pentatonic scale rooted low - moody and forgiving, so any
 // combination of steps the user places still sounds intentional.
 // Root A1 for bass, offsets are scale degrees.

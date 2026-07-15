@@ -5,6 +5,7 @@ import {
   bassFreqForStep,
   leadFreqForStep,
   padChordFreqs,
+  transposeRatio,
   vocalFreqForStep,
 } from "./notes"
 import type { TrackType } from "./pattern"
@@ -18,6 +19,7 @@ interface VoiceCtx {
   step: number
   noiseBuffer: AudioBuffer
   secondsPerStep: number
+  transpose: number // semitones, applied to pitched voices
 }
 
 function env(
@@ -38,12 +40,13 @@ function env(
   }
 }
 
-function kick({ ctx, out, time, velocity, variant }: VoiceCtx) {
+function kick({ ctx, out, time, velocity, variant, transpose }: VoiceCtx) {
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
   osc.type = "sine"
-  const startFreq = variant === 2 ? 120 : variant === 1 ? 180 : 150
-  const endFreq = variant === 2 ? 38 : 50
+  const ratio = transposeRatio(transpose)
+  const startFreq = (variant === 2 ? 120 : variant === 1 ? 180 : 150) * ratio
+  const endFreq = (variant === 2 ? 38 : 50) * ratio
   osc.frequency.setValueAtTime(startFreq, time)
   osc.frequency.exponentialRampToValueAtTime(endFreq, time + 0.08)
   const decay = variant === 1 ? 0.22 : 0.34
@@ -54,8 +57,8 @@ function kick({ ctx, out, time, velocity, variant }: VoiceCtx) {
   osc.stop(time + decay + 0.05)
 }
 
-function bass({ ctx, out, time, velocity, variant, step }: VoiceCtx) {
-  const freq = bassFreqForStep(step)
+function bass({ ctx, out, time, velocity, variant, step, transpose }: VoiceCtx) {
+  const freq = bassFreqForStep(step) * transposeRatio(transpose)
   const osc = ctx.createOscillator()
   const osc2 = ctx.createOscillator()
   const gain = ctx.createGain()
@@ -125,8 +128,8 @@ function snare({ ctx, out, time, velocity, variant, noiseBuffer }: VoiceCtx) {
   }
 }
 
-function lead({ ctx, out, time, velocity, variant, step, secondsPerStep }: VoiceCtx) {
-  const freq = leadFreqForStep(step)
+function lead({ ctx, out, time, velocity, variant, step, transpose }: VoiceCtx) {
+  const freq = leadFreqForStep(step) * transposeRatio(transpose)
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
   const filter = ctx.createBiquadFilter()
@@ -142,8 +145,8 @@ function lead({ ctx, out, time, velocity, variant, step, secondsPerStep }: Voice
   osc.stop(time + decay + 0.1)
 }
 
-function pad({ ctx, out, time, velocity, variant, secondsPerStep }: VoiceCtx) {
-  const freqs = padChordFreqs()
+function pad({ ctx, out, time, velocity, variant, secondsPerStep, transpose }: VoiceCtx) {
+  const freqs = padChordFreqs().map((f) => f * transposeRatio(transpose))
   const hold = secondsPerStep * 8 // sustains across half a bar
   const master = ctx.createGain()
   const filter = ctx.createBiquadFilter()
@@ -173,8 +176,8 @@ function pad({ ctx, out, time, velocity, variant, secondsPerStep }: VoiceCtx) {
   filter.connect(master).connect(out)
 }
 
-function vocal({ ctx, out, time, velocity, variant, step }: VoiceCtx) {
-  const freq = vocalFreqForStep(step)
+function vocal({ ctx, out, time, velocity, variant, step, transpose }: VoiceCtx) {
+  const freq = vocalFreqForStep(step) * transposeRatio(transpose)
   // formant vowels via 3 bandpass filters
   const vowelSets = [
     [800, 1150, 2900], // aah
@@ -260,6 +263,21 @@ export function createNoiseBuffer(ctx: AudioContext): AudioBuffer {
   const data = buffer.getChannelData(0)
   for (let i = 0; i < length; i++) {
     data[i] = Math.random() * 2 - 1
+  }
+  return buffer
+}
+
+// Algorithmic reverb impulse response: exponentially-decaying white noise,
+// the classic no-sample-needed way to get a convincing hall tail out of a
+// ConvolverNode.
+export function createReverbImpulse(ctx: AudioContext, duration = 2.4, decay = 3): AudioBuffer {
+  const length = Math.floor(ctx.sampleRate * duration)
+  const buffer = ctx.createBuffer(2, length, ctx.sampleRate)
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buffer.getChannelData(ch)
+    for (let i = 0; i < length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay)
+    }
   }
   return buffer
 }

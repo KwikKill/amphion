@@ -3,7 +3,7 @@
 // the track is active and whose "energy" spikes on every trigger and decays.
 
 import { leadPitchNorm } from "./notes"
-import type { TrackType } from "./pattern"
+import { TRACK_ORDER, type TrackType } from "./pattern"
 
 interface Star {
   x: number
@@ -30,6 +30,13 @@ interface Ripple {
 interface SnarePulse {
   t: number // age in seconds since the hit
   velocity: number
+}
+
+interface Cloud {
+  x: number // 0..1, wraps around
+  y: number // 0..1 fraction of the sky band
+  w: number // width as a fraction of canvas width
+  depth: number // 0 (far: slow/small/faint) .. 1 (near: fast/big/opaque)
 }
 
 function lerp(a: number, b: number, t: number) {
@@ -59,6 +66,7 @@ export class SceneEngine {
   private comets: Comet[] = []
   private ripples: Ripple[] = []
   private mountains: number[] = []
+  private clouds: Cloud[] = []
   private snarePulses: SnarePulse[] = []
   private padHueDrift = 0
   private gridScroll = 0
@@ -105,6 +113,17 @@ export class SceneEngine {
       hgt += (Math.random() - 0.5) * 0.12
       hgt = Math.max(0.15, Math.min(0.55, hgt))
       this.mountains.push(hgt)
+    }
+    // parallax cloud layer, each with its own depth (speed/size/opacity)
+    this.clouds = []
+    const cloudCount = Math.floor(9 * this.density)
+    for (let i = 0; i < cloudCount; i++) {
+      this.clouds.push({
+        x: Math.random(),
+        y: Math.random() * 0.55,
+        w: 0.08 + Math.random() * 0.14,
+        depth: Math.random(),
+      })
     }
   }
 
@@ -163,17 +182,7 @@ export class SceneEngine {
   private update(dt: number) {
     this.time += dt
     // ease presence toward active state, decay energies
-    const allTypes: TrackType[] = [
-      "kick",
-      "bass",
-      "hihat",
-      "snare",
-      "lead",
-      "pad",
-      "vocal",
-      "texture",
-    ]
-    for (const t of allTypes) {
+    for (const t of TRACK_ORDER) {
       const target = this.active.has(t) ? 1 : 0
       this.presence[t] = lerp(this.presence[t] || 0, target, 1 - Math.pow(0.001, dt))
       this.energy[t] = (this.energy[t] || 0) * Math.pow(0.02, dt)
@@ -181,6 +190,11 @@ export class SceneEngine {
     this.palmSway *= Math.pow(0.15, dt)
     this.gridScroll += dt * (0.25 + (this.energy.bass || 0) * 0.4)
     this.padHueDrift *= Math.pow(0.6, dt)
+    // parallax clouds - nearer (higher depth) drift faster
+    this.clouds.forEach((c) => {
+      c.x += dt * (0.004 + c.depth * 0.018)
+      if (c.x > 1.2) c.x -= 1.4
+    })
     // ripples
     this.ripples.forEach((r) => (r.t += dt))
     this.ripples = this.ripples.filter((r) => r.t < 1.4)
@@ -203,6 +217,19 @@ export class SceneEngine {
   private render() {
     const ctx = this.ctx
     const { w, h } = this
+
+    // base clear so the camera-shake translate below never exposes a gap
+    // at the canvas edge
+    ctx.fillStyle = "#05060f"
+    ctx.fillRect(0, 0, w, h)
+
+    // camera punch on strong kicks, decays with the kick's own energy
+    const shakeMag = Math.min(4, (this.energy.kick || 0) * 3)
+    ctx.save()
+    if (shakeMag > 0.05) {
+      ctx.translate((Math.random() - 0.5) * 2 * shakeMag, (Math.random() - 0.5) * 1.2 * shakeMag)
+    }
+
     const horizon = h * 0.6
     const cx = w / 2
     const hue = this.themeHue
@@ -236,6 +263,34 @@ export class SceneEngine {
         const sy = s.y * h
         const size = s.size * (1 + twinkle * 0.8)
         ctx.fillRect(sx, sy, size, size)
+      }
+    }
+
+    // ---- parallax clouds ----
+    // always drifting at a faint baseline so the layer reads even with no
+    // texture track running; an active texture track thickens them up
+    const cloudBoost = this.presence.texture || 0
+    for (const c of this.clouds) {
+      const alpha = 0.05 + cloudBoost * (0.12 + c.depth * 0.22)
+      const wrappedX = ((c.x % 1) + 1) % 1
+      const ccx = wrappedX * w
+      const ccy = c.y * horizon * 0.85
+      const cw = c.w * w * (0.6 + c.depth * 0.6)
+      const ch = cw * 0.34
+      ctx.fillStyle = this.hsl(hue + 10, 30, 88, alpha)
+      // each lobe is its own closed subpath (separate beginPath/fill) -
+      // chaining several ellipse() calls in one path connects them with
+      // straight lines, which can carve a visible notch/hole into the fill
+      const lobes = [
+        { dx: 0, dy: 0, rx: cw * 0.5, ry: ch * 0.5 },
+        { dx: -cw * 0.24, dy: ch * 0.12, rx: cw * 0.34, ry: ch * 0.4 },
+        { dx: cw * 0.26, dy: ch * 0.08, rx: cw * 0.36, ry: ch * 0.42 },
+        { dx: cw * 0.03, dy: -ch * 0.18, rx: cw * 0.3, ry: ch * 0.3 },
+      ]
+      for (const lobe of lobes) {
+        ctx.beginPath()
+        ctx.ellipse(ccx + lobe.dx, ccy + lobe.dy, lobe.rx, lobe.ry, 0, 0, Math.PI * 2)
+        ctx.fill()
       }
     }
 
@@ -288,6 +343,43 @@ export class SceneEngine {
         const y = horizon + p * R * 0.9
         const thickness = 2 + p * 7
         ctx.fillRect(cx - R, y, R * 2, thickness)
+      }
+      ctx.restore()
+
+      // ---- sun reflection on the water ----
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(0, horizon, w, h - horizon)
+      ctx.clip()
+      ctx.globalAlpha = 0.4 * sunP
+      ctx.translate(cx, horizon)
+      ctx.scale(1, -0.55)
+      const reflGlow = ctx.createRadialGradient(0, 0, R * 0.2, 0, 0, R * 3.2)
+      reflGlow.addColorStop(0, this.hsl(hue - 25, 100, 70, 0.55))
+      reflGlow.addColorStop(0.4, this.hsl(hue - 15, 95, 60, 0.18))
+      reflGlow.addColorStop(1, this.hsl(hue, 90, 50, 0))
+      ctx.fillStyle = reflGlow
+      ctx.fillRect(-R * 3.2, -R * 3.2, R * 6.4, R * 6.4)
+      ctx.beginPath()
+      ctx.arc(0, 0, R, 0, Math.PI * 2)
+      ctx.fillStyle = this.hsl(hue - 20, 100, 65)
+      ctx.fill()
+      ctx.restore()
+
+      // shimmering water lines break up the reflection so it doesn't
+      // look like a solid mirrored double
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(0, horizon, w, h - horizon)
+      ctx.clip()
+      ctx.globalCompositeOperation = "destination-out"
+      const ripples = 6
+      for (let i = 0; i < ripples; i++) {
+        const y = horizon + 4 + i * (R * 0.32)
+        if (y > h) break
+        const wob = Math.sin(this.time * 1.4 + i * 1.8) * 5
+        ctx.globalAlpha = 0.35
+        ctx.fillRect(0, y + wob, w, 2.5)
       }
       ctx.restore()
     }
@@ -434,6 +526,8 @@ export class SceneEngine {
     vig.addColorStop(1, "rgba(0,0,0,0.55)")
     ctx.fillStyle = vig
     ctx.fillRect(0, 0, w, h)
+
+    ctx.restore() // pairs with the camera-shake save at the top of render()
   }
 
   private drawPalm(x: number, baseY: number, height: number, sway: number, hue: number) {

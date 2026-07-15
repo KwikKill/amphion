@@ -9,6 +9,17 @@ function pickMime(candidates: string[]): string {
   return ""
 }
 
+// MediaRecorder's default bitrate is quite conservative and shows up as
+// visible blockiness on glow/gradient-heavy content like this scene. This
+// is a local download, not a stream, so we can afford to be generous -
+// scale with the canvas's actual pixel count so quality holds up
+// regardless of window size or DPR.
+function estimateVideoBitrate(width: number, height: number, fps: number): number {
+  const bitsPerPixel = 0.15
+  const bitrate = width * height * fps * bitsPerPixel
+  return Math.round(Math.min(25_000_000, Math.max(4_000_000, bitrate)))
+}
+
 export interface ActiveRecording {
   stop: () => void
   mediaRecorder: MediaRecorder
@@ -24,11 +35,13 @@ export function startRecording(opts: {
 
   const tracks: MediaStreamTrack[] = []
   let mime = ""
-  let extension = "webm"
+  const extension = "webm"
+  const recorderOptions: MediaRecorderOptions = {}
 
   if (kind === "video") {
     if (!canvas || typeof canvas.captureStream !== "function") return null
-    const canvasStream = canvas.captureStream(30)
+    const fps = 30
+    const canvasStream = canvas.captureStream(fps)
     tracks.push(...canvasStream.getVideoTracks())
     tracks.push(...audioStream.getAudioTracks())
     mime = pickMime([
@@ -36,15 +49,19 @@ export function startRecording(opts: {
       "video/webm;codecs=vp8,opus",
       "video/webm",
     ])
+    recorderOptions.videoBitsPerSecond = estimateVideoBitrate(canvas.width, canvas.height, fps)
+    recorderOptions.audioBitsPerSecond = 192_000
   } else {
     tracks.push(...audioStream.getAudioTracks())
     mime = pickMime(["audio/webm;codecs=opus", "audio/webm", "audio/ogg"])
+    recorderOptions.audioBitsPerSecond = 160_000
   }
 
   if (tracks.length === 0) return null
 
+  if (mime) recorderOptions.mimeType = mime
   const stream = new MediaStream(tracks)
-  const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream)
+  const recorder = new MediaRecorder(stream, recorderOptions)
   const chunks: BlobPart[] = []
 
   recorder.ondataavailable = (e) => {

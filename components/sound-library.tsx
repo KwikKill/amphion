@@ -13,7 +13,8 @@ interface SoundLibraryProps {
 }
 
 export function SoundLibrary({ usedTypes, themeId, onAdd, onClose }: SoundLibraryProps) {
-  const used = new Set(usedTypes)
+  const counts = new Map<TrackType, number>()
+  usedTypes.forEach((type) => counts.set(type, (counts.get(type) ?? 0) + 1))
 
   return (
     <div className="w-[min(92vw,420px)] rounded-2xl border border-border/60 bg-popover/95 p-4 shadow-2xl backdrop-blur-xl">
@@ -22,7 +23,9 @@ export function SoundLibrary({ usedTypes, themeId, onAdd, onClose }: SoundLibrar
           <h2 className="font-display text-sm font-bold tracking-wide text-foreground">
             Sound Library
           </h2>
-          <p className="text-xs text-muted-foreground">Each layer paints a piece of the scene</p>
+          <p className="text-xs text-muted-foreground">
+            Each layer paints a piece of the scene - add the same sound more than once for extra layers
+          </p>
         </div>
         <Button variant="ghost" size="icon-sm" aria-label="Close library" onClick={onClose}>
           <X />
@@ -32,14 +35,13 @@ export function SoundLibrary({ usedTypes, themeId, onAdd, onClose }: SoundLibrar
         {TRACK_ORDER.map((type) => {
           const meta = TRACK_CATALOG[type]
           const hue = trackHue(meta.hue, themeId)
-          const isUsed = used.has(type)
+          const count = counts.get(type) ?? 0
           return (
             <button
               key={type}
               type="button"
-              disabled={isUsed}
               onClick={() => onAdd(type)}
-              className="group flex items-center gap-3 rounded-xl border border-border/50 bg-card/50 px-3 py-2 text-left transition-all hover:border-accent/50 hover:bg-card disabled:cursor-not-allowed disabled:opacity-40"
+              className="group flex items-center gap-3 rounded-xl border border-border/50 bg-card/50 px-3 py-2 text-left transition-all hover:border-accent/50 hover:bg-card"
             >
               <span
                 className="size-2.5 shrink-0 rounded-full"
@@ -57,13 +59,12 @@ export function SoundLibrary({ usedTypes, themeId, onAdd, onClose }: SoundLibrar
                   {meta.description}
                 </span>
               </span>
-              {isUsed ? (
-                <span className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">
-                  Added
+              {count > 0 && (
+                <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[0.65rem] font-bold tabular-nums text-secondary-foreground">
+                  ×{count}
                 </span>
-              ) : (
-                <Plus className="size-4 text-muted-foreground transition-colors group-hover:text-accent" />
               )}
+              <Plus className="size-4 text-muted-foreground transition-colors group-hover:text-accent" />
             </button>
           )
         })}

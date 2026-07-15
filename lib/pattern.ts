@@ -1,6 +1,12 @@
 // Core data model for an Amphion pattern.
-// A pattern is fully described by BPM + a list of tracks, each with a
-// 16-step on/off grid. This object is what gets encoded into the share URL.
+// A pattern is BPM + swing + a list of tracks. Each track loops its own
+// step array independently: it has its own length, its own repeat count
+// (finite or infinite), and can stay silent for a number of leading
+// repeats before it becomes audible. All tracks share one clock (the same
+// step duration derived from BPM) - that shared pulse is the only thing
+// linking them together. Because lengths and repeat counts differ per
+// track, the combination rarely repeats identically for very long, and
+// finite tracks eventually fall silent for good.
 
 export type TrackType =
   | "kick"
@@ -12,14 +18,22 @@ export type TrackType =
   | "vocal"
   | "texture"
 
-export const STEP_COUNT = 16
+export const DEFAULT_STEP_COUNT = 16
+export const MIN_STEPS = 1
+export const MAX_STEPS = 32
+export const MIN_TRANSPOSE = -12
+export const MAX_TRANSPOSE = 12
 
 export interface Track {
+  id: string
   type: TrackType
   variant: number // which synth flavor within the family (0-based)
-  steps: number[] // length STEP_COUNT, 0 or 1
+  steps: number[] // this track's own length, 0 or 1 per step
   volume: number // 0..1
   muted: boolean
+  repeat: number | "infinite" // total number of times this loop plays
+  skipRepeats: number // leading repeats played silently before the track becomes audible
+  transpose: number // semitones, -12..12 - lets two instances of the same instrument harmonize
 }
 
 export interface Pattern {
@@ -65,7 +79,7 @@ export const TRACK_CATALOG: Record<TrackType, TrackMeta> = {
     label: "Snare / Clap",
     hue: 205,
     variants: ["Snare", "Clap", "Rim"],
-    description: "Horizon flash - a scanline of light",
+    description: "Pulse bars - radiate out like a heartbeat",
   },
   lead: {
     type: "lead",
@@ -108,24 +122,53 @@ export const TRACK_ORDER: TrackType[] = [
   "texture",
 ]
 
-function emptySteps(): number[] {
-  return new Array(STEP_COUNT).fill(0)
+function makeId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID()
+  return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+}
+
+function emptySteps(length: number): number[] {
+  return new Array(length).fill(0)
+}
+
+export function clampStepCount(length: number): number {
+  return Math.min(MAX_STEPS, Math.max(MIN_STEPS, Math.round(length)))
+}
+
+export function clampTranspose(semitones: number): number {
+  return Math.min(MAX_TRANSPOSE, Math.max(MIN_TRANSPOSE, Math.round(semitones)))
 }
 
 export function makeTrack(type: TrackType): Track {
   return {
+    id: makeId(),
     type,
     variant: 0,
-    steps: emptySteps(),
+    steps: emptySteps(DEFAULT_STEP_COUNT),
     volume: 0.8,
     muted: false,
+    repeat: "infinite",
+    skipRepeats: 0,
+    transpose: 0,
   }
 }
 
-// The prefilled demo groove shown on first load.
+// Resize a track's step array in place-safe fashion: truncates or
+// zero-pads, never reallocates existing on/off values.
+export function resizeSteps(steps: number[], length: number): number[] {
+  const clamped = clampStepCount(length)
+  if (clamped === steps.length) return steps
+  if (clamped < steps.length) return steps.slice(0, clamped)
+  return [...steps, ...emptySteps(clamped - steps.length)]
+}
+
+// The prefilled demo groove shown on first load. Lengths and repeat counts
+// are deliberately mismatched so the combination drifts instead of
+// repeating identically bar after bar, and lead/vocal stagger their entry
+// and eventually drop out for good.
 export function demoPattern(): Pattern {
-  const s = (arr: number[]) => {
-    const out = emptySteps()
+  const s = (length: number, arr: number[]) => {
+    const out = emptySteps(length)
     arr.forEach((i) => (out[i] = 1))
     return out
   }
@@ -133,13 +176,83 @@ export function demoPattern(): Pattern {
     bpm: 110,
     swing: 0.12,
     tracks: [
-      { type: "kick", variant: 0, steps: s([0, 4, 8, 12]), volume: 0.9, muted: false },
-      { type: "bass", variant: 0, steps: s([0, 3, 6, 8, 11, 14]), volume: 0.7, muted: false },
-      { type: "snare", variant: 1, steps: s([4, 12]), volume: 0.75, muted: false },
-      { type: "hihat", variant: 0, steps: s([2, 6, 10, 14]), volume: 0.5, muted: false },
-      { type: "lead", variant: 1, steps: s([0, 2, 3, 7, 8, 10, 14]), volume: 0.55, muted: false },
-      { type: "vocal", variant: 0, steps: s([3, 4, 5, 6, 11, 12, 13]), volume: 0.55, muted: false },
-      { type: "pad", variant: 0, steps: s([0, 8]), volume: 0.6, muted: false },
+      {
+        id: makeId(),
+        type: "kick",
+        variant: 0,
+        steps: s(8, [0, 4]),
+        volume: 0.9,
+        muted: false,
+        repeat: "infinite",
+        skipRepeats: 0,
+        transpose: 0,
+      },
+      {
+        id: makeId(),
+        type: "bass",
+        variant: 0,
+        steps: s(12, [0, 3, 6, 8]),
+        volume: 0.7,
+        muted: false,
+        repeat: "infinite",
+        skipRepeats: 0,
+        transpose: 0,
+      },
+      {
+        id: makeId(),
+        type: "snare",
+        variant: 1,
+        steps: s(16, [4, 12]),
+        volume: 0.75,
+        muted: false,
+        repeat: "infinite",
+        skipRepeats: 0,
+        transpose: 0,
+      },
+      {
+        id: makeId(),
+        type: "hihat",
+        variant: 0,
+        steps: s(6, [0, 2, 4]),
+        volume: 0.5,
+        muted: false,
+        repeat: "infinite",
+        skipRepeats: 0,
+        transpose: 0,
+      },
+      {
+        id: makeId(),
+        type: "lead",
+        variant: 1,
+        steps: s(14, [0, 3, 7, 10]),
+        volume: 0.55,
+        muted: false,
+        repeat: "infinite",
+        skipRepeats: 4,
+        transpose: 0,
+      },
+      {
+        id: makeId(),
+        type: "vocal",
+        variant: 0,
+        steps: s(16, [2, 3, 12, 13, 14]),
+        volume: 0.55,
+        muted: false,
+        repeat: "infinite",
+        skipRepeats: 8,
+        transpose: 0,
+      },
+      {
+        id: makeId(),
+        type: "pad",
+        variant: 0,
+        steps: s(16, [0, 8]),
+        volume: 0.6,
+        muted: false,
+        repeat: "infinite",
+        skipRepeats: 0,
+        transpose: 0,
+      },
     ],
   }
 }
@@ -149,8 +262,9 @@ export function emptyPattern(): Pattern {
 }
 
 /* ------------------------- URL share encoding ------------------------- */
-// Compact, human-shareable encoding. Steps become a 16-bit hex number so a
-// whole pattern fits comfortably in a URL without a backend.
+// Compact, human-shareable encoding. Each track's steps become a bitmask
+// alongside its own length, repeat count and skip count, so a whole
+// pattern fits comfortably in a URL without a backend.
 
 function base64UrlEncode(str: string): string {
   const b64 = typeof window !== "undefined" ? window.btoa(str) : Buffer.from(str).toString("base64")
@@ -167,12 +281,17 @@ export function encodePattern(pattern: Pattern): string {
     b: pattern.bpm,
     s: Math.round(pattern.swing * 100),
     t: pattern.tracks.map((t) => ({
+      i: t.id,
       y: t.type,
       v: t.variant,
       m: t.muted ? 1 : 0,
       g: Math.round(t.volume * 100),
+      n: t.steps.length,
       // pack steps into a bitmask
       p: t.steps.reduce((acc, cur, i) => acc | (cur ? 1 << i : 0), 0),
+      r: t.repeat === "infinite" ? -1 : t.repeat,
+      k: t.skipRepeats,
+      x: t.transpose,
     })),
   }
   return base64UrlEncode(JSON.stringify(compact))
@@ -182,16 +301,22 @@ export function decodePattern(encoded: string): Pattern | null {
   try {
     const compact = JSON.parse(base64UrlDecode(encoded))
     const tracks: Track[] = (compact.t || []).map((t: any) => {
-      const steps = emptySteps()
-      for (let i = 0; i < STEP_COUNT; i++) {
+      const length = clampStepCount(t.n ?? DEFAULT_STEP_COUNT)
+      const steps = emptySteps(length)
+      for (let i = 0; i < length; i++) {
         steps[i] = (t.p >> i) & 1
       }
+      const repeat = t.r === -1 || t.r === undefined ? "infinite" : Math.max(1, Math.round(t.r))
       return {
+        id: typeof t.i === "string" && t.i ? t.i : makeId(),
         type: t.y as TrackType,
         variant: t.v ?? 0,
         muted: !!t.m,
         volume: (t.g ?? 80) / 100,
         steps,
+        repeat,
+        skipRepeats: Math.max(0, Math.round(t.k ?? 0)),
+        transpose: clampTranspose(t.x ?? 0),
       }
     })
     return {

@@ -19,16 +19,19 @@ import { ThemePicker } from "@/components/theme-picker"
 import { TrackRack } from "@/components/track-rack"
 import { TransportBar } from "@/components/transport-bar"
 import { VisualScene, type SceneHandle } from "@/components/visual-scene"
-import { AudioEngine } from "@/lib/audio-engine"
+import { AudioEngine, type TrackStatus } from "@/lib/audio-engine"
 import {
+  clampTranspose,
   decodePattern,
   demoPattern,
   emptyPattern,
   encodePattern,
   makeTrack,
+  resizeSteps,
   TRACK_CATALOG,
   TRACK_ORDER,
   type Pattern,
+  type Track,
   type TrackType,
 } from "@/lib/pattern"
 import {
@@ -43,7 +46,15 @@ export function Amphion() {
   const [pattern, setPattern] = useState<Pattern>(() => demoPattern())
   const [started, setStarted] = useState(false)
   const [playing, setPlaying] = useState(false)
-  const [currentStep, setCurrentStep] = useState(-1)
+  // track id -> that track's own current step (independent cursors now,
+  // there's no single shared playhead anymore).
+  const [playheads, setPlayheads] = useState<Record<string, number>>({})
+  // instrument families currently audible while playing (past their skip
+  // phase, not yet finished) - reported live by the engine.
+  const [liveActiveTracks, setLiveActiveTracks] = useState<TrackType[]>([])
+  // per-track waiting/playing/finished status, so the rack can grey out a
+  // track that hasn't started yet or has finished for good.
+  const [trackStatuses, setTrackStatuses] = useState<Record<string, TrackStatus>>({})
   const [masterVolume, setMasterVolume] = useState(0.85)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [watchMode, setWatchMode] = useState(false)
@@ -71,8 +82,15 @@ export function Amphion() {
     const engine = engineRef.current
     if (!engine) return
     engine.setCallbacks({
-      onStep: (step) => setCurrentStep(step),
+      onStep: (trackId, step) =>
+        setPlayheads((prev) => (prev[trackId] === step ? prev : { ...prev, [trackId]: step })),
+      onStop: () => {
+        setPlayheads({})
+        setTrackStatuses({})
+      },
       onTrigger: (type, velocity, step) => sceneRef.current?.trigger(type, velocity, step),
+      onActiveTracks: (types) => setLiveActiveTracks(types),
+      onTrackStatus: (statuses) => setTrackStatuses(statuses),
       onLoopStart: () => {
         const action = pendingStartActionRef.current
         if (!action) return
@@ -119,10 +137,15 @@ export function Amphion() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchMode])
 
-  const activeTracks = useMemo<TrackType[]>(
+  // Static preview (used before playback starts, or as a fallback): which
+  // families are configured with any active step at all.
+  const configuredActiveTracks = useMemo<TrackType[]>(
     () => pattern.tracks.filter((t) => t.steps.some((s) => s === 1)).map((t) => t.type),
     [pattern],
   )
+  // While playing, prefer the engine's live signal, which reflects skip
+  // phases and tracks that have finished and gone silent for good.
+  const sceneActiveTracks = playing ? liveActiveTracks : configuredActiveTracks
 
   const orderedTracks = useMemo(
     () =>
@@ -133,20 +156,26 @@ export function Amphion() {
   )
 
   /* --------------------------- transport --------------------------- */
-  const begin = useCallback(async () => {
-    console.log("begin called")
+  // Used from the start screen, where the user picks demo vs. blank right
+  // before the transport starts - the engine's pattern is set synchronously
+  // here (not just via React state) so start() resets its runtime against
+  // the right tracks instead of whatever was there before.
+  const beginWithPattern = useCallback(async (nextPattern: Pattern) => {
+    setPattern(nextPattern)
     setStarted(true)
     const engine = engineRef.current
-    console.log("engine present?", !!engine)
     if (!engine) return
+    engine.setPattern(nextPattern)
     try {
       await engine.start()
       setPlaying(true)
-      console.log("engine started")
     } catch (err) {
       console.log("engine start error", err)
     }
   }, [])
+
+  const beginDemo = useCallback(() => beginWithPattern(demoPattern()), [beginWithPattern])
+  const beginBlank = useCallback(() => beginWithPattern(emptyPattern()), [beginWithPattern])
 
   // Pausing/stopping the transport means no segment is playing to wait for
   // anymore, so any queued recording start/stop can't resolve on its own.
@@ -177,28 +206,23 @@ export function Amphion() {
   const stop = useCallback(() => {
     engineRef.current?.stop()
     setPlaying(false)
-    setCurrentStep(-1)
     abortPendingRecording()
   }, [abortPendingRecording])
 
   /* --------------------------- editing --------------------------- */
-  const updateTrack = useCallback(
-    (index: number, updater: (t: Pattern["tracks"][number]) => Pattern["tracks"][number]) => {
-      setPattern((prev) => {
-        const tracks = prev.tracks.map((t, i) => (i === index ? updater({ ...t }) : t))
-        return { ...prev, tracks }
-      })
-    },
-    [],
-  )
+  const updateTrack = useCallback((id: string, updater: (t: Track) => Track) => {
+    setPattern((prev) => ({
+      ...prev,
+      tracks: prev.tracks.map((t) => (t.id === id ? updater({ ...t }) : t)),
+    }))
+  }, [])
 
   const handleToggleStep = useCallback(
-    (index: number, step: number) => {
-      const realIdx = realIndex(pattern, index)
+    (id: string, step: number) => {
       let turnedOn = false
       setPattern((prev) => {
-        const tracks = prev.tracks.map((t, i) => {
-          if (i !== realIdx) return t
+        const tracks = prev.tracks.map((t) => {
+          if (t.id !== id) return t
           const steps = [...t.steps]
           steps[step] = steps[step] ? 0 : 1
           turnedOn = steps[step] === 1
@@ -207,55 +231,82 @@ export function Amphion() {
         return { ...prev, tracks }
       })
       const engine = engineRef.current
-      const track = orderedTracks[index]
+      const track = pattern.tracks.find((t) => t.id === id)
       if (turnedOn && track && !engine?.playing) {
-        engine?.audition(track.type, track.variant, track.volume, step)
+        engine?.audition(track.type, track.variant, track.volume, track.transpose, step)
       }
     },
-    [orderedTracks, pattern],
+    [pattern],
   )
 
   const handleCycleVariant = useCallback(
-    (index: number) => {
-      const track = orderedTracks[index]
+    (id: string) => {
+      const track = pattern.tracks.find((t) => t.id === id)
+      if (!track) return
       const variants = TRACK_CATALOG[track.type].variants.length
       const next = (track.variant + 1) % variants
-      updateTrack(realIndex(pattern, index), (t) => ({ ...t, variant: next }))
-      engineRef.current?.audition(track.type, next, track.volume)
+      updateTrack(id, (t) => ({ ...t, variant: next }))
+      engineRef.current?.audition(track.type, next, track.volume, track.transpose)
     },
-    [orderedTracks, pattern, updateTrack],
+    [pattern, updateTrack],
   )
 
   const handleToggleMute = useCallback(
-    (index: number) => {
-      updateTrack(realIndex(pattern, index), (t) => ({ ...t, muted: !t.muted }))
+    (id: string) => {
+      updateTrack(id, (t) => ({ ...t, muted: !t.muted }))
     },
-    [pattern, updateTrack],
+    [updateTrack],
   )
 
   const handleVolume = useCallback(
-    (index: number, v: number) => {
-      updateTrack(realIndex(pattern, index), (t) => ({ ...t, volume: v }))
+    (id: string, v: number) => {
+      updateTrack(id, (t) => ({ ...t, volume: v }))
+    },
+    [updateTrack],
+  )
+
+  const handleResize = useCallback(
+    (id: string, length: number) => {
+      updateTrack(id, (t) => ({ ...t, steps: resizeSteps(t.steps, length) }))
+    },
+    [updateTrack],
+  )
+
+  const handleRepeatChange = useCallback(
+    (id: string, repeat: number | "infinite") => {
+      updateTrack(id, (t) => {
+        if (repeat === "infinite") return { ...t, repeat }
+        return { ...t, repeat, skipRepeats: Math.min(t.skipRepeats, Math.max(0, repeat - 1)) }
+      })
+    },
+    [updateTrack],
+  )
+
+  const handleSkipChange = useCallback(
+    (id: string, skip: number) => {
+      updateTrack(id, (t) => {
+        const maxSkip = t.repeat === "infinite" ? skip : Math.max(0, t.repeat - 1)
+        return { ...t, skipRepeats: Math.max(0, Math.min(skip, maxSkip)) }
+      })
+    },
+    [updateTrack],
+  )
+
+  const handleTransposeChange = useCallback(
+    (id: string, semitones: number) => {
+      updateTrack(id, (t) => ({ ...t, transpose: clampTranspose(semitones) }))
+      const track = pattern.tracks.find((t) => t.id === id)
+      if (track) engineRef.current?.audition(track.type, track.variant, track.volume, clampTranspose(semitones))
     },
     [pattern, updateTrack],
   )
 
-  const handleRemove = useCallback(
-    (index: number) => {
-      const track = orderedTracks[index]
-      setPattern((prev) => ({
-        ...prev,
-        tracks: prev.tracks.filter((t) => t.type !== track.type),
-      }))
-    },
-    [orderedTracks],
-  )
+  const handleRemove = useCallback((id: string) => {
+    setPattern((prev) => ({ ...prev, tracks: prev.tracks.filter((t) => t.id !== id) }))
+  }, [])
 
   const handleAdd = useCallback((type: TrackType) => {
-    setPattern((prev) => {
-      if (prev.tracks.some((t) => t.type === type)) return prev
-      return { ...prev, tracks: [...prev.tracks, makeTrack(type)] }
-    })
+    setPattern((prev) => ({ ...prev, tracks: [...prev.tracks, makeTrack(type)] }))
   }, [])
 
   const clearAll = useCallback(() => {
@@ -378,7 +429,7 @@ export function Amphion() {
     <main className="relative flex-1 overflow-hidden">
       <VisualScene
         ref={sceneRef}
-        activeTracks={activeTracks}
+        activeTracks={sceneActiveTracks}
         playing={playing}
         themeHue={themeHue(themeId)}
       />
@@ -389,7 +440,9 @@ export function Amphion() {
         className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-background/70 to-transparent"
       />
 
-      {!started && <StartOverlay onBegin={begin} themeId={themeId} />}
+      {!started && (
+        <StartOverlay onBeginDemo={beginDemo} onBeginBlank={beginBlank} themeId={themeId} />
+      )}
 
       {started && !watchMode && (
         <>
@@ -502,16 +555,21 @@ export function Amphion() {
                 </Button>
               </div>
 
-              <div className="max-h-[38vh] overflow-y-auto pr-0.5">
+              <div className="max-h-[58vh] overflow-y-auto pr-0.5">
                 <TrackRack
                   tracks={orderedTracks}
-                  currentStep={currentStep}
+                  playheads={playheads}
+                  trackStatuses={trackStatuses}
                   themeId={themeId}
                   onToggleStep={handleToggleStep}
                   onCycleVariant={handleCycleVariant}
                   onToggleMute={handleToggleMute}
                   onVolume={handleVolume}
                   onRemove={handleRemove}
+                  onResize={handleResize}
+                  onRepeatChange={handleRepeatChange}
+                  onSkipChange={handleSkipChange}
+                  onTransposeChange={handleTransposeChange}
                 />
               </div>
             </div>
@@ -548,16 +606,6 @@ export function Amphion() {
   )
 }
 
-// The pattern is stored unsorted; the rack shows a sorted view, so map a
-// sorted index back to the real array index for mutations.
-function realIndex(pattern: Pattern, sortedIndex: number): number {
-  const sorted = [...pattern.tracks].sort(
-    (a, b) => TRACK_ORDER.indexOf(a.type) - TRACK_ORDER.indexOf(b.type),
-  )
-  const type = sorted[sortedIndex]?.type
-  return pattern.tracks.findIndex((t) => t.type === type)
-}
-
 function Footer({ hidden }: { hidden?: boolean }) {
   const year = new Date().getFullYear()
   return (
@@ -586,14 +634,20 @@ const START_FEATURES = [
   { icon: Video, label: "Record & share" },
 ]
 
-function StartOverlay({ onBegin, themeId }: { onBegin: () => void; themeId: ThemeId }) {
+function StartOverlay({
+  onBeginDemo,
+  onBeginBlank,
+  themeId,
+}: {
+  onBeginDemo: () => void
+  onBeginBlank: () => void
+  themeId: ThemeId
+}) {
   const swatch = themeSwatch(themeId)
+  const [showMenu, setShowMenu] = useState(false)
+
   return (
-    <button
-      type="button"
-      onClick={onBegin}
-      className="group absolute inset-0 z-30 flex flex-col items-center justify-center gap-8 px-6 text-center backdrop-blur-[1px]"
-    >
+    <div className="group absolute inset-0 z-30 flex flex-col items-center justify-center gap-8 px-6 text-center backdrop-blur-[1px]">
       {/* dedicated scrim behind the copy so it stays legible over a busy scene */}
       <div
         aria-hidden="true"
@@ -636,16 +690,48 @@ function StartOverlay({ onBegin, themeId }: { onBegin: () => void; themeId: Them
           ))}
         </div>
 
-        <span
-          className="mt-2 flex items-center gap-2 rounded-full px-6 py-3 font-display text-sm font-bold tracking-widest text-background transition-transform duration-300 group-hover:scale-105 group-active:scale-95"
-          style={{ backgroundColor: swatch, boxShadow: `0 0 45px ${swatch}` }}
-        >
-          <span className="size-2 animate-pulse rounded-full bg-background/70" />
-          CLICK TO BEGIN
-        </span>
+        {!showMenu ? (
+          <button
+            type="button"
+            onClick={() => setShowMenu(true)}
+            className="mt-2 flex items-center gap-2 rounded-full px-6 py-3 font-display text-sm font-bold tracking-widest text-background transition-transform duration-300 hover:scale-105 active:scale-95"
+            style={{ backgroundColor: swatch, boxShadow: `0 0 45px ${swatch}` }}
+          >
+            <span className="size-2 animate-pulse rounded-full bg-background/70" />
+            CLICK TO BEGIN
+          </button>
+        ) : (
+          <div
+            className="mt-2 flex animate-in flex-col gap-2 rounded-2xl border bg-card/70 p-2 fade-in zoom-in-95 duration-300 backdrop-blur-xl sm:flex-row"
+            style={{ borderColor: `${swatch}55`, boxShadow: `0 0 0 1px ${swatch}22 inset, 0 0 30px ${swatch}33` }}
+          >
+            <button
+              type="button"
+              onClick={onBeginDemo}
+              className="flex min-w-40 flex-col items-center gap-1 rounded-xl border border-border/60 bg-background/40 px-5 py-3 text-center transition-colors hover:border-accent/60 hover:bg-background/60"
+            >
+              <Sparkles className="size-4" style={{ color: swatch }} />
+              <span className="font-display text-xs font-bold tracking-widest text-foreground">
+                Play the Demo
+              </span>
+              <span className="text-[0.65rem] text-muted-foreground">just a few layers to get you started</span>
+            </button>
+            <button
+              type="button"
+              onClick={onBeginBlank}
+              className="flex min-w-40 flex-col items-center gap-1 rounded-xl border border-border/60 bg-background/40 px-5 py-3 text-center transition-colors hover:border-accent/60 hover:bg-background/60"
+            >
+              <Eraser className="size-4" style={{ color: swatch }} />
+              <span className="font-display text-xs font-bold tracking-widest text-foreground">
+                Start From Scratch
+              </span>
+              <span className="text-[0.65rem] text-muted-foreground">A blank horizon</span>
+            </button>
+          </div>
+        )}
       </div>
 
       <CrtOverlay color={swatch} />
-    </button>
+    </div>
   )
 }
