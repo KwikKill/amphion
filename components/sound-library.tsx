@@ -17,7 +17,10 @@ export function SoundLibrary({ usedTypes, themeId, onAdd, onClose }: SoundLibrar
   usedTypes.forEach((type) => counts.set(type, (counts.get(type) ?? 0) + 1))
 
   return (
-    <div className="w-[min(92vw,420px)] rounded-2xl border border-border/60 bg-popover/95 p-4 shadow-2xl backdrop-blur-xl">
+    <div
+      data-tutorial="sound-library"
+      className="w-[min(92vw,420px)] rounded-2xl border border-border/60 bg-popover/95 p-4 shadow-2xl backdrop-blur-xl"
+    >
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h2 className="font-display text-sm font-bold tracking-wide text-foreground">

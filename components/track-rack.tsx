@@ -16,6 +16,9 @@ interface TrackRackProps {
   // Absent entries (not playing yet) render as normal.
   trackStatuses: Record<string, TrackStatus>
   themeId: ThemeId
+  // when set, the matching track's row gets a data-tutorial anchor so the
+  // interactive tutorial can spotlight the layer the user just added.
+  tutorialTrackId?: string | null
   onToggleStep: (id: string, step: number) => void
   onCycleVariant: (id: string) => void
   onToggleMute: (id: string) => void
@@ -32,6 +35,7 @@ export function TrackRack({
   playheads,
   trackStatuses,
   themeId,
+  tutorialTrackId,
   onToggleStep,
   onCycleVariant,
   onToggleMute,
@@ -61,6 +65,7 @@ export function TrackRack({
         return (
           <div
             key={track.id}
+            data-tutorial={track.id === tutorialTrackId ? "track-row" : undefined}
             className={cn(
               "group flex flex-col gap-1.5 rounded-xl border border-border/50 bg-card/60 px-2 py-1.5 backdrop-blur-md transition-all",
               track.muted && "opacity-55",
@@ -183,9 +188,13 @@ export function TrackRack({
                 onIncrement={() => onResize(track.id, track.steps.length + 1)}
                 decrementDisabled={track.steps.length <= MIN_STEPS}
                 incrementDisabled={track.steps.length >= MAX_STEPS}
+                tutorialId={track.id === tutorialTrackId ? "track-len" : undefined}
               />
 
-              <div className="flex items-center gap-1">
+              <div
+                className="flex items-center gap-1"
+                data-tutorial={track.id === tutorialTrackId ? "track-repeat" : undefined}
+              >
                 <span className="uppercase tracking-wider text-muted-foreground">Repeat</span>
                 <button
                   type="button"
@@ -217,10 +226,12 @@ export function TrackRack({
                 onDecrement={() => onSkipChange(track.id, Math.max(0, track.skipRepeats - 1))}
                 onIncrement={() => onSkipChange(track.id, track.skipRepeats + 1)}
                 decrementDisabled={track.skipRepeats <= 0}
+                tutorialId={track.id === tutorialTrackId ? "track-skip" : undefined}
               />
 
               <MiniStepper
                 label="Pitch"
+                tutorialId={track.id === tutorialTrackId ? "track-pitch" : undefined}
                 display={track.transpose > 0 ? `+${track.transpose}` : String(track.transpose)}
                 onDecrement={() => onTransposeChange(track.id, track.transpose - 1)}
                 onIncrement={() => onTransposeChange(track.id, track.transpose + 1)}
@@ -242,6 +253,7 @@ function MiniStepper({
   onIncrement,
   decrementDisabled,
   incrementDisabled,
+  tutorialId,
 }: {
   label?: string
   display: string
@@ -249,9 +261,10 @@ function MiniStepper({
   onIncrement: () => void
   decrementDisabled?: boolean
   incrementDisabled?: boolean
+  tutorialId?: string
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1" data-tutorial={tutorialId}>
       {label && <span className="uppercase tracking-wider text-muted-foreground">{label}</span>}
       <button
         type="button"

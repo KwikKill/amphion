@@ -11,6 +11,7 @@ interface ThemePickerProps {
 export function ThemePicker({ value, onChange }: ThemePickerProps) {
   return (
     <div
+      data-tutorial="theme-picker"
       className="flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-2 py-1.5 backdrop-blur-md"
       role="group"
       aria-label="Visual theme"

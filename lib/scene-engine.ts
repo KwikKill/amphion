@@ -457,6 +457,7 @@ export class SceneEngine {
       this.drawPalm(w * 0.12, horizon + 4, horizon * 0.5 * palmP, sway, hue)
       this.drawPalm(w * 0.86, horizon + 4, horizon * 0.42 * palmP, -sway, hue)
       this.drawPalm(w * 0.26, horizon + 2, horizon * 0.34 * palmP, sway * 0.7, hue)
+      this.drawPalm(w * 0.74, horizon + 2, horizon * 0.3 * palmP, -sway * 0.7, hue)
     }
 
     // ---- texture: mist + grain ----

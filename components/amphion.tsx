@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  BookOpen,
   Check,
   Eraser,
   Eye,
@@ -18,6 +19,7 @@ import { SoundLibrary } from "@/components/sound-library"
 import { ThemePicker } from "@/components/theme-picker"
 import { TrackRack } from "@/components/track-rack"
 import { TransportBar } from "@/components/transport-bar"
+import { TutorialCoach } from "@/components/tutorial-coach"
 import { VisualScene, type SceneHandle } from "@/components/visual-scene"
 import { AudioEngine, type TrackStatus } from "@/lib/audio-engine"
 import {
@@ -40,6 +42,7 @@ import {
   type ActiveRecording,
 } from "@/lib/recorder"
 import { DEFAULT_THEME, themeHue, themeSwatch, type ThemeId } from "@/lib/theme"
+import { TUTORIAL_STEPS } from "@/lib/tutorial"
 import { cn } from "@/lib/utils"
 
 export function Amphion() {
@@ -58,6 +61,9 @@ export function Amphion() {
   const [masterVolume, setMasterVolume] = useState(0.85)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [watchMode, setWatchMode] = useState(false)
+  const [tutorialActive, setTutorialActive] = useState(false)
+  const [tutorialStep, setTutorialStep] = useState(0)
+  const [tutorialTrackId, setTutorialTrackId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [themeId, setThemeId] = useState<ThemeId>(DEFAULT_THEME)
   const [recordingKind, setRecordingKind] = useState<"video" | "audio" | null>(null)
@@ -71,6 +77,43 @@ export function Amphion() {
   const pendingStartActionRef = useRef<(() => void | Promise<void>) | null>(null)
   const patternRef = useRef(pattern)
   patternRef.current = pattern
+  const tutorialActiveRef = useRef(tutorialActive)
+  tutorialActiveRef.current = tutorialActive
+  const tutorialStepRef = useRef(tutorialStep)
+  tutorialStepRef.current = tutorialStep
+  const tutorialStepsToggledRef = useRef(0)
+  const tutorialDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Advances the tutorial only if it's active and currently waiting on this
+  // exact step - so a handler can call this unconditionally without caring
+  // whether a tutorial is even running.
+  const advanceTutorial = useCallback((id: (typeof TUTORIAL_STEPS)[number]["id"]) => {
+    if (!tutorialActiveRef.current) return
+    if (TUTORIAL_STEPS[tutorialStepRef.current]?.id !== id) return
+    setTutorialStep((s) => Math.min(TUTORIAL_STEPS.length - 1, s + 1))
+  }, [])
+
+  // Same as advanceTutorial, but waits for a pause in activity first - for
+  // continuous drag controls (knobs) whose onChange fires on every pixel of
+  // movement, so the step doesn't jump the instant the user touches it.
+  const advanceTutorialDebounced = useCallback(
+    (id: (typeof TUTORIAL_STEPS)[number]["id"], delay = 500) => {
+      if (tutorialDebounceRef.current) clearTimeout(tutorialDebounceRef.current)
+      tutorialDebounceRef.current = setTimeout(() => advanceTutorial(id), delay)
+    },
+    [advanceTutorial],
+  )
+
+  const manualAdvanceTutorial = useCallback(() => {
+    if (tutorialDebounceRef.current) clearTimeout(tutorialDebounceRef.current)
+    setTutorialStep((s) => Math.min(TUTORIAL_STEPS.length - 1, s + 1))
+  }, [])
+
+  const exitTutorial = useCallback(() => setTutorialActive(false), [])
+
+  useEffect(() => {
+    if (TUTORIAL_STEPS[tutorialStep]?.id === "toggle-steps") tutorialStepsToggledRef.current = 0
+  }, [tutorialStep])
 
   // Create the engine once.
   if (engineRef.current === null && typeof window !== "undefined") {
@@ -137,6 +180,15 @@ export function Amphion() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchMode])
 
+  // The "watch mode" tutorial step only completes once the user has both
+  // entered and left it - catch the true -> false transition here since
+  // the coach mark itself is hidden for the whole time watch mode is on.
+  const prevWatchModeRef = useRef(watchMode)
+  useEffect(() => {
+    if (prevWatchModeRef.current && !watchMode) advanceTutorial("watch")
+    prevWatchModeRef.current = watchMode
+  }, [watchMode, advanceTutorial])
+
   // Static preview (used before playback starts, or as a fallback): which
   // families are configured with any active step at all.
   const configuredActiveTracks = useMemo<TrackType[]>(
@@ -177,6 +229,20 @@ export function Amphion() {
   const beginDemo = useCallback(() => beginWithPattern(demoPattern()), [beginWithPattern])
   const beginBlank = useCallback(() => beginWithPattern(emptyPattern()), [beginWithPattern])
 
+  // Starts the real app on a blank canvas, same as beginBlank, but doesn't
+  // start playback - the tutorial itself asks the user to press play later,
+  // and that click is what satisfies the browser's autoplay gesture
+  // requirement, so the engine shouldn't be started ahead of it.
+  const beginTutorial = useCallback(() => {
+    const blank = emptyPattern()
+    setPattern(blank)
+    setStarted(true)
+    engineRef.current?.setPattern(blank)
+    setTutorialTrackId(null)
+    setTutorialStep(0)
+    setTutorialActive(true)
+  }, [])
+
   // Pausing/stopping the transport means no segment is playing to wait for
   // anymore, so any queued recording start/stop can't resolve on its own.
   const abortPendingRecording = useCallback(() => {
@@ -200,8 +266,9 @@ export function Amphion() {
     } else {
       await engine.start()
       setPlaying(true)
+      advanceTutorial("play")
     }
-  }, [abortPendingRecording])
+  }, [abortPendingRecording, advanceTutorial])
 
   const stop = useCallback(() => {
     engineRef.current?.stop()
@@ -235,8 +302,12 @@ export function Amphion() {
       if (turnedOn && track && !engine?.playing) {
         engine?.audition(track.type, track.variant, track.volume, track.transpose, step)
       }
+      if (turnedOn && tutorialActiveRef.current && TUTORIAL_STEPS[tutorialStepRef.current]?.id === "toggle-steps") {
+        tutorialStepsToggledRef.current += 1
+        if (tutorialStepsToggledRef.current >= 2) advanceTutorial("toggle-steps")
+      }
     },
-    [pattern],
+    [pattern, advanceTutorial],
   )
 
   const handleCycleVariant = useCallback(
@@ -247,29 +318,33 @@ export function Amphion() {
       const next = (track.variant + 1) % variants
       updateTrack(id, (t) => ({ ...t, variant: next }))
       engineRef.current?.audition(track.type, next, track.volume, track.transpose)
+      advanceTutorial("sound")
     },
-    [pattern, updateTrack],
+    [pattern, updateTrack, advanceTutorial],
   )
 
   const handleToggleMute = useCallback(
     (id: string) => {
       updateTrack(id, (t) => ({ ...t, muted: !t.muted }))
+      advanceTutorial("sound")
     },
-    [updateTrack],
+    [updateTrack, advanceTutorial],
   )
 
   const handleVolume = useCallback(
     (id: string, v: number) => {
       updateTrack(id, (t) => ({ ...t, volume: v }))
+      advanceTutorial("sound")
     },
-    [updateTrack],
+    [updateTrack, advanceTutorial],
   )
 
   const handleResize = useCallback(
     (id: string, length: number) => {
       updateTrack(id, (t) => ({ ...t, steps: resizeSteps(t.steps, length) }))
+      advanceTutorial("len")
     },
-    [updateTrack],
+    [updateTrack, advanceTutorial],
   )
 
   const handleRepeatChange = useCallback(
@@ -278,8 +353,9 @@ export function Amphion() {
         if (repeat === "infinite") return { ...t, repeat }
         return { ...t, repeat, skipRepeats: Math.min(t.skipRepeats, Math.max(0, repeat - 1)) }
       })
+      advanceTutorial("repeat")
     },
-    [updateTrack],
+    [updateTrack, advanceTutorial],
   )
 
   const handleSkipChange = useCallback(
@@ -288,8 +364,9 @@ export function Amphion() {
         const maxSkip = t.repeat === "infinite" ? skip : Math.max(0, t.repeat - 1)
         return { ...t, skipRepeats: Math.max(0, Math.min(skip, maxSkip)) }
       })
+      advanceTutorial("skip")
     },
-    [updateTrack],
+    [updateTrack, advanceTutorial],
   )
 
   const handleTransposeChange = useCallback(
@@ -297,17 +374,27 @@ export function Amphion() {
       updateTrack(id, (t) => ({ ...t, transpose: clampTranspose(semitones) }))
       const track = pattern.tracks.find((t) => t.id === id)
       if (track) engineRef.current?.audition(track.type, track.variant, track.volume, clampTranspose(semitones))
+      advanceTutorial("pitch")
     },
-    [pattern, updateTrack],
+    [pattern, updateTrack, advanceTutorial],
   )
 
   const handleRemove = useCallback((id: string) => {
     setPattern((prev) => ({ ...prev, tracks: prev.tracks.filter((t) => t.id !== id) }))
   }, [])
 
-  const handleAdd = useCallback((type: TrackType) => {
-    setPattern((prev) => ({ ...prev, tracks: [...prev.tracks, makeTrack(type)] }))
-  }, [])
+  const handleAdd = useCallback(
+    (type: TrackType) => {
+      const track = makeTrack(type)
+      setPattern((prev) => ({ ...prev, tracks: [...prev.tracks, track] }))
+      if (tutorialActiveRef.current && TUTORIAL_STEPS[tutorialStepRef.current]?.id === "add-sound") {
+        setTutorialTrackId((prev) => prev ?? track.id)
+        setLibraryOpen(false)
+        advanceTutorial("add-sound")
+      }
+    },
+    [advanceTutorial],
+  )
 
   const clearAll = useCallback(() => {
     setPattern(emptyPattern())
@@ -331,7 +418,8 @@ export function Amphion() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
-  }, [])
+    advanceTutorial("share")
+  }, [advanceTutorial])
 
   /* --------------------------- watch mode --------------------------- */
   const enterWatch = useCallback(async () => {
@@ -376,6 +464,8 @@ export function Amphion() {
       const engine = engineRef.current
       if (!engine) return
 
+      advanceTutorial("record")
+
       const beginCapture = () => {
         setStartingRecording(false)
         const audioStream = engine.getStream()
@@ -419,7 +509,31 @@ export function Amphion() {
       setStartingRecording(true)
       pendingStartActionRef.current = beginCapture
     },
-    [],
+    [advanceTutorial],
+  )
+
+  const handleThemeChange = useCallback(
+    (id: ThemeId) => {
+      setThemeId(id)
+      advanceTutorial("theme")
+    },
+    [advanceTutorial],
+  )
+
+  const handleBpm = useCallback(
+    (v: number) => {
+      setPattern((p) => ({ ...p, bpm: v }))
+      advanceTutorialDebounced("tempo")
+    },
+    [advanceTutorialDebounced],
+  )
+
+  const handleSwing = useCallback(
+    (v: number) => {
+      setPattern((p) => ({ ...p, swing: v }))
+      advanceTutorialDebounced("swing")
+    },
+    [advanceTutorialDebounced],
   )
 
   const usedTypes = pattern.tracks.map((t) => t.type)
@@ -441,7 +555,31 @@ export function Amphion() {
       />
 
       {!started && (
-        <StartOverlay onBeginDemo={beginDemo} onBeginBlank={beginBlank} themeId={themeId} />
+        <StartOverlay
+          onBeginDemo={beginDemo}
+          onBeginBlank={beginBlank}
+          onStartTutorial={beginTutorial}
+          themeId={themeId}
+        />
+      )}
+
+      {started && tutorialActive && (
+        <TutorialCoach
+          themeId={themeId}
+          step={tutorialStep}
+          watchMode={watchMode}
+          onManualAdvance={manualAdvanceTutorial}
+          onFinishKeep={exitTutorial}
+          onFinishDemo={() => {
+            setTutorialActive(false);
+            beginDemo()
+          }}
+          onFinishReset={() => {
+            clearAll()
+            exitTutorial()
+          }}
+          onExit={exitTutorial}
+        />
       )}
 
       {started && !watchMode && (
@@ -477,7 +615,7 @@ export function Amphion() {
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-1.5">
-              <ThemePicker value={themeId} onChange={setThemeId} />
+              <ThemePicker value={themeId} onChange={handleThemeChange} />
               {recordingKind && (
                 <span className="mr-1 flex items-center gap-1.5 rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive">
                   <span className="size-2 animate-pulse rounded-full bg-destructive" />
@@ -490,41 +628,43 @@ export function Amphion() {
               <Button variant="ghost" size="sm" onClick={clearAll}>
                 <Eraser /> Clear
               </Button>
-              <Button variant="secondary" size="sm" onClick={share}>
+              <Button data-tutorial="share-button" variant="secondary" size="sm" onClick={share}>
                 {copied ? <Check className="text-accent" /> : <Link2 />}
                 {copied ? "Copied" : "Share"}
               </Button>
-              <Button
-                variant={recordingKind === "audio" ? "default" : "secondary"}
-                size="sm"
-                disabled={recordingKind !== null && recordingKind !== "audio"}
-                onClick={() => toggleRecord("audio")}
-              >
-                <Radio />{" "}
-                {recordingKind === "audio"
-                  ? startingRecording
-                    ? "Starting…"
-                    : finishingRecording
-                      ? "Finishing…"
-                      : "Stop"
-                  : "Audio"}
-              </Button>
-              <Button
-                variant={recordingKind === "video" ? "default" : "secondary"}
-                size="sm"
-                disabled={recordingKind !== null && recordingKind !== "video"}
-                onClick={() => toggleRecord("video")}
-              >
-                <Video />{" "}
-                {recordingKind === "video"
-                  ? startingRecording
-                    ? "Starting…"
-                    : finishingRecording
-                      ? "Finishing…"
-                      : "Stop"
-                  : "Record"}
-              </Button>
-              <Button variant="outline" size="sm" onClick={enterWatch}>
+              <div data-tutorial="record-buttons" className="flex items-center gap-1.5">
+                <Button
+                  variant={recordingKind === "audio" ? "default" : "secondary"}
+                  size="sm"
+                  disabled={recordingKind !== null && recordingKind !== "audio"}
+                  onClick={() => toggleRecord("audio")}
+                >
+                  <Radio />{" "}
+                  {recordingKind === "audio"
+                    ? startingRecording
+                      ? "Starting…"
+                      : finishingRecording
+                        ? "Finishing…"
+                        : "Stop"
+                    : "Audio"}
+                </Button>
+                <Button
+                  variant={recordingKind === "video" ? "default" : "secondary"}
+                  size="sm"
+                  disabled={recordingKind !== null && recordingKind !== "video"}
+                  onClick={() => toggleRecord("video")}
+                >
+                  <Video />{" "}
+                  {recordingKind === "video"
+                    ? startingRecording
+                      ? "Starting…"
+                      : finishingRecording
+                        ? "Finishing…"
+                        : "Stop"
+                    : "Record"}
+                </Button>
+              </div>
+              <Button data-tutorial="watch-button" variant="outline" size="sm" onClick={enterWatch}>
                 <Eye /> Watch
               </Button>
             </div>
@@ -541,11 +681,12 @@ export function Amphion() {
                   masterVolume={masterVolume}
                   onPlayPause={togglePlay}
                   onStop={stop}
-                  onBpm={(v) => setPattern((p) => ({ ...p, bpm: v }))}
-                  onSwing={(v) => setPattern((p) => ({ ...p, swing: v }))}
+                  onBpm={handleBpm}
+                  onSwing={handleSwing}
                   onMasterVolume={setMasterVolume}
                 />
                 <Button
+                  data-tutorial="add-sound"
                   size="sm"
                   variant={libraryOpen ? "default" : "outline"}
                   onClick={() => setLibraryOpen((o) => !o)}
@@ -561,6 +702,7 @@ export function Amphion() {
                   playheads={playheads}
                   trackStatuses={trackStatuses}
                   themeId={themeId}
+                  tutorialTrackId={tutorialTrackId}
                   onToggleStep={handleToggleStep}
                   onCycleVariant={handleCycleVariant}
                   onToggleMute={handleToggleMute}
@@ -637,10 +779,12 @@ const START_FEATURES = [
 function StartOverlay({
   onBeginDemo,
   onBeginBlank,
+  onStartTutorial,
   themeId,
 }: {
   onBeginDemo: () => void
   onBeginBlank: () => void
+  onStartTutorial: () => void
   themeId: ThemeId
 }) {
   const swatch = themeSwatch(themeId)
@@ -705,6 +849,17 @@ function StartOverlay({
             className="mt-2 flex animate-in flex-col gap-2 rounded-2xl border bg-card/70 p-2 fade-in zoom-in-95 duration-300 backdrop-blur-xl sm:flex-row"
             style={{ borderColor: `${swatch}55`, boxShadow: `0 0 0 1px ${swatch}22 inset, 0 0 30px ${swatch}33` }}
           >
+            <button
+              type="button"
+              onClick={onStartTutorial}
+              className="flex min-w-40 flex-col items-center gap-1 rounded-xl border border-border/60 bg-background/40 px-5 py-3 text-center transition-colors hover:border-accent/60 hover:bg-background/60"
+            >
+              <BookOpen className="size-4" style={{ color: swatch }} />
+              <span className="font-display text-xs font-bold tracking-widest text-foreground">
+                Tutorial
+              </span>
+              <span className="text-[0.65rem] text-muted-foreground">Learn the console, step by step</span>
+            </button>
             <button
               type="button"
               onClick={onBeginDemo}

@@ -24,6 +24,7 @@ function Knob({
   step,
   onChange,
   width = "w-28",
+  tutorialId,
 }: {
   label: string
   value: number
@@ -33,9 +34,10 @@ function Knob({
   step: number
   onChange: (v: number) => void
   width?: string
+  tutorialId?: string
 }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className="flex flex-col gap-1" data-tutorial={tutorialId}>
       <span className="flex items-center justify-between gap-3 text-[0.62rem] font-medium uppercase tracking-widest text-muted-foreground">
         {label}
         <span className="font-mono text-[0.7rem] tabular-nums text-accent">{display}</span>
@@ -69,6 +71,7 @@ export function TransportBar({
     <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
       <div className="flex items-center gap-2">
         <Button
+          data-tutorial="play-button"
           size="icon-lg"
           aria-label={playing ? "Pause" : "Play"}
           onClick={onPlayPause}
@@ -95,6 +98,7 @@ export function TransportBar({
         max={180}
         step={1}
         onChange={onBpm}
+        tutorialId="tempo-knob"
       />
       <Knob
         label="Swing"
@@ -104,6 +108,7 @@ export function TransportBar({
         max={0.6}
         step={0.01}
         onChange={onSwing}
+        tutorialId="swing-knob"
         width="w-20"
       />
       <Knob
