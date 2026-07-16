@@ -1,5 +1,5 @@
 // Content + ordering for the interactive, in-app tutorial. Each step points
-// (via a `data-tutorial` selector) at a real piece of the console - the
+// (via a `data-tutorial` selector) at a real piece of the console. The
 // coach mark waits for the matching action to actually happen instead of
 // just describing it. Steps without a `cta` label auto-advance purely from
 // user action; the coach still offers a small "skip this step" escape
@@ -26,8 +26,8 @@ export type TutorialStepId =
 export interface TutorialStep {
   id: TutorialStepId
   // data-tutorial selector(s), or null for a centered card. An array picks
-  // whichever selector (searched last-to-first) currently matches - used
-  // for "add-sound", where the button gets replaced by the panel it opens.
+  // whichever selector (searched last to first) currently matches; used for
+  // "add-sound", where the button gets replaced by the panel it opens.
   target: string | string[] | null
   kicker: string
   title: string
@@ -41,7 +41,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: null,
     kicker: "Welcome",
     title: "Learn by doing",
-    body: "This is a hands-on tour - we'll build a tiny groove together, for real. Every step below asks you to try something in the console.",
+    body: "This is a hands-on tour. We'll build a tiny groove together, for real, and every step below asks you to try something in the console.",
     cta: "Let's go",
   },
   {
@@ -49,14 +49,14 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: ['[data-tutorial="add-sound"]', '[data-tutorial="sound-library"]'],
     kicker: "Sound library",
     title: "Add your first layer",
-    body: "Click Add sound to open the library, then pick any family - Kick is a steady place to start.",
+    body: "Click Add sound to open the library, then pick any family. Kick is a steady place to start.",
   },
   {
     id: "toggle-steps",
     target: '[data-tutorial="track-row"]',
     kicker: "The grid",
     title: "Program a beat",
-    body: "Click a few cells on this layer's grid to turn steps on - each one will trigger a hit once the transport rolls.",
+    body: "Click a few cells on this layer's grid to turn steps on. Each one will trigger a hit once the transport rolls.",
   },
   {
     id: "sound",
@@ -70,7 +70,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: '[data-tutorial="track-len"]',
     kicker: "Layer length",
     title: "Change the loop length",
-    body: "Use Len's - and + to shrink or grow this layer's own loop. A different length than its neighbors means the pattern drifts instead of repeating identically.",
+    body: "Use Len's minus and plus buttons to shrink or grow this layer's own loop. A different length than its neighbors means the pattern drifts instead of repeating identically.",
   },
   {
     id: "repeat",
@@ -84,28 +84,28 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: '[data-tutorial="track-skip"]',
     kicker: "Skip",
     title: "Delay its entrance",
-    body: "Raise Skip and this layer sits out that many rounds before it ever makes a sound - handy for staggering when each layer joins in.",
+    body: "Raise Skip and this layer sits out that many rounds before it ever makes a sound. Handy for staggering when each layer joins in.",
   },
   {
     id: "pitch",
     target: '[data-tutorial="track-pitch"]',
     kicker: "Pitch",
     title: "Transpose the layer",
-    body: "Nudge Pitch up or down to shift this layer's notes in semitones - stack two of the same instrument at different pitches and they'll harmonize.",
+    body: "Nudge Pitch up or down to shift this layer's notes in semitones. Stack two of the same instrument at different pitches and they'll harmonize.",
   },
   {
     id: "play",
     target: '[data-tutorial="play-button"]',
     kicker: "Transport",
     title: "Press play",
-    body: "Hit play - the sequencer loops your steps and the scene lights up in time.",
+    body: "Hit play. The sequencer loops your steps and the scene lights up in time.",
   },
   {
     id: "tempo",
     target: '[data-tutorial="tempo-knob"]',
     kicker: "Transport",
     title: "Feel the tempo",
-    body: "Drag Tempo to speed things up or slow things down - take your time, we'll move on once you settle on a speed.",
+    body: "Drag Tempo to speed things up or slow things down. Take your time, we'll move on once you settle on a speed.",
   },
   {
     id: "swing",
@@ -126,14 +126,14 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: '[data-tutorial="share-button"]',
     kicker: "Share",
     title: "Send your groove",
-    body: "Click Share to copy a link that carries your whole pattern - tempo, swing, every layer.",
+    body: "Click Share to copy a link that carries your whole pattern: tempo, swing, every layer.",
   },
   {
     id: "record",
     target: '[data-tutorial="record-buttons"]',
     kicker: "Capture",
     title: "Record the scene",
-    body: "Audio exports a clean recording, Video captures the animated scene too - both start and stop on a loop boundary so nothing's cut off mid-bar. Try it, or skip ahead.",
+    body: "Audio exports a clean recording, Video captures the animated scene too. Both start and stop on a loop boundary, so nothing's cut off mid-bar. Try it, or skip ahead.",
     cta: "Skip for now",
   },
   {
@@ -148,6 +148,6 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     target: null,
     kicker: "Ready",
     title: "You know the whole console",
-    body: "From here it's yours - keep building this pattern, or wipe it and start clean.",
+    body: "From here it's yours. Keep building this pattern, or wipe it and start clean.",
   },
 ]

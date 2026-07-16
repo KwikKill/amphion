@@ -3,7 +3,7 @@
 // Interactive walkthrough that sits on top of the real console. Rather than
 // describing a feature in a slide, each step spotlights the actual control
 // (via a data-tutorial attribute) and waits for the matching action to
-// happen - the app tells this component "that happened" by advancing
+// happen: the app tells this component "that happened" by advancing
 // `step`. A small skip affordance is always available so nobody gets stuck.
 
 import { useEffect, useState, type CSSProperties } from "react"
@@ -34,8 +34,8 @@ interface Rect {
   height: number
 }
 
-// Picks the *last* selector in the list that currently matches an element -
-// lets a step spotlight a button until something more specific appears (e.g.
+// Picks the *last* selector in the list that currently matches an element.
+// Lets a step spotlight a button until something more specific appears (e.g.
 // the panel that button opens), without ballooning into a box that spans
 // both, which reads as "everything" instead of "this one thing".
 function measurePriority(selectors: string[]): Rect | null {

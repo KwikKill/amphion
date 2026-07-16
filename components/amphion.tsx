@@ -85,7 +85,7 @@ export function Amphion() {
   const tutorialDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Advances the tutorial only if it's active and currently waiting on this
-  // exact step - so a handler can call this unconditionally without caring
+  // exact step, so a handler can call this unconditionally without caring
   // whether a tutorial is even running.
   const advanceTutorial = useCallback((id: (typeof TUTORIAL_STEPS)[number]["id"]) => {
     if (!tutorialActiveRef.current) return
@@ -93,7 +93,7 @@ export function Amphion() {
     setTutorialStep((s) => Math.min(TUTORIAL_STEPS.length - 1, s + 1))
   }, [])
 
-  // Same as advanceTutorial, but waits for a pause in activity first - for
+  // Same as advanceTutorial, but waits for a pause in activity first, for
   // continuous drag controls (knobs) whose onChange fires on every pixel of
   // movement, so the step doesn't jump the instant the user touches it.
   const advanceTutorialDebounced = useCallback(
@@ -181,7 +181,7 @@ export function Amphion() {
   }, [watchMode])
 
   // The "watch mode" tutorial step only completes once the user has both
-  // entered and left it - catch the true -> false transition here since
+  // entered and left it. Catch the true to false transition here, since
   // the coach mark itself is hidden for the whole time watch mode is on.
   const prevWatchModeRef = useRef(watchMode)
   useEffect(() => {
@@ -230,7 +230,7 @@ export function Amphion() {
   const beginBlank = useCallback(() => beginWithPattern(emptyPattern()), [beginWithPattern])
 
   // Starts the real app on a blank canvas, same as beginBlank, but doesn't
-  // start playback - the tutorial itself asks the user to press play later,
+  // start playback. The tutorial itself asks the user to press play later,
   // and that click is what satisfies the browser's autoplay gesture
   // requirement, so the engine shouldn't be started ahead of it.
   const beginTutorial = useCallback(() => {
