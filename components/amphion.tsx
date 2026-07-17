@@ -775,7 +775,7 @@ function Footer({ hidden }: { hidden?: boolean }) {
 }
 
 const START_FEATURES = [
-  { icon: Music4, label: "8-layer sequencer" },
+  { icon: Music4, label: "multi-layer sequencer" },
   { icon: Eye, label: "Reactive visuals" },
   { icon: Video, label: "Record & share" },
 ]
