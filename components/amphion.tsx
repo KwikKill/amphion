@@ -157,16 +157,20 @@ export function Amphion() {
     engineRef.current?.setMasterVolume(masterVolume)
   }, [masterVolume])
 
-  // Load a shared pattern from the URL, if present.
+  // Load a shared pattern from the URL, if present. Skip the start screen
+  // entirely and drop the visitor straight into the console with it, so a
+  // shared link is actually listenable instead of getting wiped by whatever
+  // the start menu is clicked into next.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const p = params.get("p")
     if (p) {
       const decoded = decodePattern(p)
       if (decoded && decoded.tracks.length > 0) {
-        setPattern(decoded)
+        beginWithPattern(decoded)
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Esc exits watch mode.
